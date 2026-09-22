@@ -365,3 +365,133 @@ export async function exportProductsHandler(): Promise<ApiResponse<string>> {
     return { success: false, message: error.message || 'Failed to export products' };
   }
 }
+
+export async function importProductsHandler(
+  fileBase64: string
+): Promise<ApiResponse<{ importedCount: number; errorCount: number; errors: string[] }>> {
+  try {
+    const prisma = getPrismaClient();
+    const buffer = Buffer.from(fileBase64, 'base64');
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(buffer as any);
+
+    const worksheet = workbook.worksheets[0];
+    if (!worksheet) {
+      return { success: false, message: 'Invalid Excel file: No worksheet found' };
+    }
+
+    let importedCount = 0;
+    const errors: string[] = [];
+
+    const getCellValue = (row: ExcelJS.Row, colIndex: number): string => {
+      const cell = row.getCell(colIndex);
+      if (cell.value === null || cell.value === undefined) return '';
+      if (typeof cell.value === 'object') {
+        if ('result' in cell.value) return String(cell.value.result || '');
+        if ('text' in cell.value) return String(cell.value.text || '');
+      }
+      return String(cell.value).trim();
+    };
+
+    const getNumValue = (row: ExcelJS.Row, colIndex: number, defaultValue: number = 0): number => {
+      const valStr = getCellValue(row, colIndex);
+      const num = parseFloat(valStr);
+      return isNaN(num) ? defaultValue : num;
+    };
+
+    const rowCount = worksheet.rowCount;
+
+    for (let r = 2; r <= rowCount; r++) {
+      const row = worksheet.getRow(r);
+      const sku = getCellValue(row, 1);
+      const barcode = getCellValue(row, 2);
+      const productName = getCellValue(row, 3);
+      const categoryName = getCellValue(row, 4);
+      const description = getCellValue(row, 5);
+      const purchasePrice = getNumValue(row, 6, 0);
+      const sellingPrice = getNumValue(row, 7, 0);
+      const gstPercentage = getNumValue(row, 8, 5);
+      const stockQuantity = getNumValue(row, 9, 0);
+      const minimumStockLevel = getNumValue(row, 10, 5);
+      const unit = getCellValue(row, 11) || 'Piece';
+
+      if (!productName && !sku && !categoryName) continue;
+
+      if (!productName) {
+        errors.push(`Row ${r}: Product name is required`);
+        continue;
+      }
+
+      if (!categoryName) {
+        errors.push(`Row ${r}: Category name is required for "${productName}"`);
+        continue;
+      }
+
+      let category = await prisma.category.findUnique({
+        where: { name: categoryName }
+      });
+
+      if (!category) {
+        category = await prisma.category.create({
+          data: { name: categoryName, description: 'Auto-created via Excel Import', isActive: true }
+        });
+      }
+
+      const productSku = sku || `SKU-${Date.now().toString().slice(-5)}-${r}`;
+      const productBarcode = barcode || null;
+
+      const existing = await prisma.product.findUnique({
+        where: { sku: productSku }
+      });
+
+      if (existing) {
+        await prisma.product.update({
+          where: { id: existing.id },
+          data: {
+            productName,
+            categoryId: category.id,
+            description: description || null,
+            purchasePrice,
+            sellingPrice,
+            gstPercentage,
+            stockQuantity,
+            minimumStockLevel,
+            unit,
+            barcode: productBarcode || existing.barcode
+          }
+        });
+      } else {
+        await prisma.product.create({
+          data: {
+            sku: productSku,
+            barcode: productBarcode,
+            productName,
+            categoryId: category.id,
+            description: description || null,
+            purchasePrice,
+            sellingPrice,
+            gstPercentage,
+            stockQuantity,
+            minimumStockLevel,
+            unit,
+            isActive: true
+          }
+        });
+      }
+
+      importedCount++;
+    }
+
+    return {
+      success: true,
+      message: `Excel import processed ${importedCount} product(s) successfully.`,
+      data: {
+        importedCount,
+        errorCount: errors.length,
+        errors
+      }
+    };
+  } catch (error: any) {
+    return { success: false, message: error.message || 'Failed to import products from Excel file' };
+  }
+}

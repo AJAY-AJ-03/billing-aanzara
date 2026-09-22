@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain } from 'electron';
+import { app, BrowserWindow, ipcMain, dialog } from 'electron';
 import path from 'path';
 import fs from 'fs';
 
@@ -14,7 +14,8 @@ import {
   updateProductHandler,
   toggleProductActiveHandler,
   searchProductsHandler,
-  exportProductsHandler
+  exportProductsHandler,
+  importProductsHandler
 } from '../backend-new/handlers/products.handler';
 import {
   getPagedCategoriesHandler,
@@ -40,7 +41,13 @@ import {
   updateOfferHandler,
   toggleOfferActiveHandler
 } from '../backend-new/handlers/offers.handler';
-import { getPagedSalesHandler } from '../backend-new/handlers/sales.handler';
+import {
+  getPagedSalesHandler,
+  getSaleByIdHandler,
+  getSaleByInvoiceHandler,
+  updateSaleHandler,
+  deleteSaleHandler
+} from '../backend-new/handlers/sales.handler';
 import {
   getMonthlySalesHandler,
   getDailySalesHandler,
@@ -105,18 +112,39 @@ function createWindow() {
   });
 }
 
+let currentSession: { id: number; name: string; email: string; role: string } | null = null;
+
 function registerIpcHandlers() {
   // Auth
   ipcMain.handle('auth:login', async (_, request) => {
     console.log('[IPC MAIN]: Received auth:login IPC request for email:', request?.email);
     const res = await loginHandler(request);
-    console.log('[IPC MAIN]: auth:login IPC response success:', res.success, 'role:', res.data?.role);
+    if (res.success && res.data) {
+      currentSession = {
+        id: res.data.userId,
+        name: res.data.name,
+        email: res.data.email,
+        role: res.data.role
+      };
+      console.log('[IPC MAIN]: Auth session created in main process for user:', currentSession);
+    }
     return res;
   });
 
+  ipcMain.handle('auth:logout', async () => {
+    console.log('[IPC MAIN]: Received auth:logout IPC request. Clearing session.');
+    currentSession = null;
+    return { success: true, message: 'Logged out successfully' };
+  });
+
   // Billing
-  ipcMain.handle('billing:calculate', async (_, items, manualDiscount) => calculateBillingHandler(items, manualDiscount));
-  ipcMain.handle('billing:create', async (_, request, salesWorkerId) => createBillHandler(request, salesWorkerId));
+  ipcMain.handle('billing:calculate', async (_, items, manualDiscount, manualTaxPercentage) =>
+    calculateBillingHandler(items, manualDiscount, manualTaxPercentage)
+  );
+  ipcMain.handle('billing:create', async (_, request, salesWorkerId) => {
+    const workerId = salesWorkerId || currentSession?.id || 1;
+    return createBillHandler(request, workerId);
+  });
   ipcMain.handle('billing:scanBarcode', async (_, barcode) => scanBarcodeHandler(barcode));
 
   // Products
@@ -127,6 +155,7 @@ function registerIpcHandlers() {
   ipcMain.handle('products:toggle', async (_, id) => toggleProductActiveHandler(id));
   ipcMain.handle('products:search', async (_, term) => searchProductsHandler(term));
   ipcMain.handle('products:export', async (_) => exportProductsHandler());
+  ipcMain.handle('products:import', async (_, base64Data) => importProductsHandler(base64Data));
 
   // Categories
   ipcMain.handle('categories:getPaged', async (_, req) => getPagedCategoriesHandler(req));
@@ -138,8 +167,8 @@ function registerIpcHandlers() {
 
   // Stock
   ipcMain.handle('stock:getTransactions', async (_, productId, req) => getStockTransactionsHandler(productId, req));
-  ipcMain.handle('stock:adjust', async (_, dto, userId) => stockAdjustHandler(dto, userId));
-  ipcMain.handle('stock:stockIn', async (_, dto, userId) => stockInHandler(dto, userId));
+  ipcMain.handle('stock:adjust', async (_, dto, userId) => stockAdjustHandler(dto, userId || currentSession?.id));
+  ipcMain.handle('stock:stockIn', async (_, dto, userId) => stockInHandler(dto, userId || currentSession?.id));
   ipcMain.handle('stock:getLowStock', async (_) => getLowStockProductsHandler());
   ipcMain.handle('stock:getOutOfStock', async (_) => getOutOfStockProductsHandler());
   ipcMain.handle('stock:export', async (_) => exportStockHandler());
@@ -154,6 +183,10 @@ function registerIpcHandlers() {
 
   // Sales
   ipcMain.handle('sales:getPaged', async (_, req) => getPagedSalesHandler(req));
+  ipcMain.handle('sales:getById', async (_, id) => getSaleByIdHandler(id));
+  ipcMain.handle('sales:getByInvoice', async (_, invNum) => getSaleByInvoiceHandler(invNum));
+  ipcMain.handle('sales:update', async (_, id, dto) => updateSaleHandler(id, dto, currentSession));
+  ipcMain.handle('sales:delete', async (_, id) => deleteSaleHandler(id, currentSession));
 
   // Reports
   ipcMain.handle('reports:monthlySales', async (_, year) => getMonthlySalesHandler(year));
@@ -164,11 +197,11 @@ function registerIpcHandlers() {
 
   // Dashboard
   ipcMain.handle('dashboard:admin', async (_) => getAdminDashboardHandler());
-  ipcMain.handle('dashboard:billing', async (_, workerId) => getBillingDashboardHandler(workerId));
+  ipcMain.handle('dashboard:billing', async (_, workerId) => getBillingDashboardHandler(workerId || currentSession?.id || 1));
 
   // Users
   ipcMain.handle('users:getPaged', async (_, req) => getPagedUsersHandler(req));
-  ipcMain.handle('users:getById', async (_, id) => getUserByIdHandler(id));
+  ipcMain.handle('users:getById', async (_, id) => getUserByIdHandler(id, currentSession));
   ipcMain.handle('users:create', async (_, dto) => createUserHandler(dto));
   ipcMain.handle('users:update', async (_, id, dto) => updateUserHandler(id, dto));
   ipcMain.handle('users:toggle', async (_, id) => toggleUserActiveHandler(id));
@@ -184,6 +217,31 @@ function registerIpcHandlers() {
       console.log('Print result:', success, failureReason);
     });
     return { success: true };
+  });
+
+  ipcMain.handle('app:savePdfDialog', async (_, base64Data: string, defaultFilename: string) => {
+    if (!mainWindow) return { success: false, message: 'No window available' };
+
+    const { filePath, canceled } = await dialog.showSaveDialog(mainWindow, {
+      title: 'Save Invoice PDF',
+      defaultPath: defaultFilename || `Invoice_${Date.now()}.pdf`,
+      filters: [
+        { name: 'PDF Documents', extensions: ['pdf'] },
+        { name: 'All Files', extensions: ['*'] }
+      ]
+    });
+
+    if (canceled || !filePath) {
+      return { success: false, message: 'Save cancelled by user' };
+    }
+
+    try {
+      const buffer = Buffer.from(base64Data, 'base64');
+      fs.writeFileSync(filePath, buffer);
+      return { success: true, message: `PDF saved successfully to ${filePath}`, data: filePath };
+    } catch (err: any) {
+      return { success: false, message: err.message || 'Failed to save PDF to file' };
+    }
   });
 }
 

@@ -151,8 +151,52 @@ export const ProductsPage: React.FC = () => {
     }
   };
 
+  const fileInputRef = React.useRef<HTMLInputElement>(null);
+
+  const handleImportClick = () => {
+    if (fileInputRef.current) {
+      fileInputRef.current.click();
+    }
+  };
+
+  const handleFileImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = async (event) => {
+      const base64Str = (event.target?.result as string)?.split(',')[1];
+      if (!base64Str) {
+        showToast('Failed to read file data', 'error');
+        return;
+      }
+
+      showToast('Processing Excel import...', 'info');
+      const res = await api.products.import(base64Str);
+      if (res.success && res.data) {
+        showToast(`Successfully imported ${res.data.importedCount} product(s)`, 'success');
+        if (res.data.errors && res.data.errors.length > 0) {
+          showToast(`Encountered ${res.data.errors.length} row warning(s)`, 'warning');
+        }
+        loadProducts();
+      } else {
+        showToast(res.message || 'Import failed', 'error');
+      }
+    };
+
+    reader.readAsDataURL(file);
+    if (e.target) e.target.value = '';
+  };
+
   return (
     <div>
+      <input
+        type="file"
+        ref={fileInputRef}
+        accept=".xlsx,.xls"
+        onChange={handleFileImport}
+        style={{ display: 'none' }}
+      />
       <div className="card">
         <div className="card-title">
           <span>Products Inventory ({totalCount})</span>
@@ -160,6 +204,10 @@ export const ProductsPage: React.FC = () => {
             <button className="btn btn-secondary" onClick={handleExport}>
               <Download size={16} />
               <span>Export Excel</span>
+            </button>
+            <button className="btn btn-secondary" onClick={handleImportClick}>
+              <Plus size={16} />
+              <span>Import Excel</span>
             </button>
             <button className="btn btn-primary" onClick={() => handleOpenModal()}>
               <Plus size={16} />

@@ -3,9 +3,11 @@ import type { LoginResponseDto } from '../../../shared/types/ipc';
 
 interface AuthUser {
   userId: number;
+  id: number;
   name: string;
   role: 'Admin' | 'SalesWorker';
   email: string;
+  phone?: string | null;
 }
 
 interface AuthContextType {
@@ -34,15 +36,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const login = (data: LoginResponseDto) => {
     const authUser: AuthUser = {
       userId: data.userId,
+      id: data.userId,
       name: data.name,
       role: data.role as 'Admin' | 'SalesWorker',
-      email: data.email
+      email: data.email,
+      phone: (data as any).phone || null
     };
     setUser(authUser);
     localStorage.setItem('aanzara_user', JSON.stringify(authUser));
   };
 
   const logout = () => {
+    import('../services/ipcApi').then(m => m.default.auth.logout()).catch(() => {});
     setUser(null);
     localStorage.removeItem('aanzara_user');
   };

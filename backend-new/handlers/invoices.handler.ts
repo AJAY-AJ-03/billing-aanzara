@@ -1,5 +1,6 @@
 import getPrismaClient from '../../database/db';
 import { ApiResponse, InvoiceDto } from '../../shared/types/ipc';
+import PDFDocument from 'pdfkit';
 
 export async function getInvoiceByIdHandler(saleId: number): Promise<ApiResponse<InvoiceDto>> {
   try {
@@ -7,6 +8,7 @@ export async function getInvoiceByIdHandler(saleId: number): Promise<ApiResponse
     const sale = await prisma.sale.findUnique({
       where: { id: saleId },
       include: {
+        salesWorker: true,
         saleItems: { include: { product: true } },
         payments: true
       }
@@ -26,6 +28,7 @@ export async function getInvoiceByNumberHandler(invoiceNumber: string): Promise<
     const sale = await prisma.sale.findUnique({
       where: { invoiceNumber },
       include: {
+        salesWorker: true,
         saleItems: { include: { product: true } },
         payments: true
       }
@@ -47,89 +50,212 @@ export async function generateInvoicePdfHandler(saleId: number): Promise<ApiResp
     }
 
     const inv = res.data;
-    const html = `
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <meta charset="utf-8">
-        <title>Invoice ${inv.invoiceNumber}</title>
-        <style>
-          body { font-family: 'Segoe UI', Arial, sans-serif; margin: 0; padding: 24px; color: #1e293b; background: #ffffff; }
-          .header { display: flex; justify-content: space-between; border-bottom: 2px solid #e2e8f0; padding-bottom: 16px; margin-bottom: 24px; }
-          .title { font-size: 24px; font-weight: 700; color: #0f172a; margin: 0; }
-          .subtitle { font-size: 14px; color: #64748b; margin-top: 4px; }
-          .info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 24px; font-size: 14px; }
-          .info-block h4 { margin: 0 0 6px 0; color: #475569; font-size: 12px; text-transform: uppercase; }
-          table { width: 100%; border-collapse: collapse; margin-bottom: 24px; }
-          th { background: #f8fafc; text-align: left; padding: 10px 12px; font-size: 12px; font-weight: 600; color: #475569; border-bottom: 1px solid #cbd5e1; }
-          td { padding: 10px 12px; font-size: 14px; border-bottom: 1px solid #f1f5f9; }
-          .totals { width: 280px; margin-left: auto; font-size: 14px; }
-          .totals-row { display: flex; justify-content: space-between; padding: 6px 0; }
-          .totals-row.grand { font-size: 18px; font-weight: 700; border-top: 2px solid #0f172a; padding-top: 10px; margin-top: 6px; }
-        </style>
-      </head>
-      <body>
-        <div class="header">
-          <div>
-            <h1 class="title">AANZARA BILLING</h1>
-            <div class="subtitle">Tax Invoice</div>
-          </div>
-          <div style="text-align: right;">
-            <div style="font-weight: 700; font-size: 16px;"># ${inv.invoiceNumber}</div>
-            <div style="color: #64748b; font-size: 13px;">Date: ${new Date(inv.invoiceDate).toLocaleDateString()}</div>
-          </div>
-        </div>
 
-        <div class="info-grid">
-          <div class="info-block">
-            <h4>Billed To</h4>
-            <div><strong>${inv.customerName || 'Walk-in Customer'}</strong></div>
-            ${inv.customerPhone ? `<div>Phone: ${inv.customerPhone}</div>` : ''}
-            ${inv.customerEmail ? `<div>Email: ${inv.customerEmail}</div>` : ''}
-            ${inv.customerGSTIN ? `<div>GSTIN: ${inv.customerGSTIN}</div>` : ''}
-          </div>
-          <div class="info-block" style="text-align: right;">
-            <h4>Payment Info</h4>
-            <div>Method: <strong>${inv.paymentMethod}</strong></div>
-            <div>Status: <strong>${inv.paymentStatus}</strong></div>
-          </div>
-        </div>
+    // Calculate totals matching QuestPDF / InvoiceService.cs formulas
+    const totalQty = inv.items.reduce((s, i) => s + i.quantity, 0);
+    const totalMrp = inv.items.reduce((s, i) => s + i.unitPrice, 0);
+    const totalOurMrp = inv.items.reduce((s, i) => {
+      const q = i.quantity === 0 ? 1 : i.quantity;
+      return s + (i.unitPrice * i.quantity - i.discount + i.gstAmount) / q;
+    }, 0);
+    const totalProfitVal = inv.items.reduce((s, i) => {
+      const q = i.quantity === 0 ? 1 : i.quantity;
+      const ourMrp = (i.unitPrice * i.quantity - i.discount + i.gstAmount) / q;
+      return s + (i.unitPrice - ourMrp);
+    }, 0);
+    const avgDisc = inv.items.length
+      ? Math.round(
+          inv.items.reduce((s, i) => {
+            const sub = i.unitPrice * i.quantity;
+            return s + (sub > 0 ? (i.discount / sub) * 100 : 0);
+          }, 0) / inv.items.length
+        )
+      : 0;
+    const totalGstAmt = inv.items.reduce((s, i) => s + i.gstAmount, 0);
 
-        <table>
-          <thead>
-            <tr>
-              <th>Item</th>
-              <th>Qty</th>
-              <th>Unit Price</th>
-              <th>GST</th>
-              <th style="text-align: right;">Total</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${inv.items.map(it => `
-              <tr>
-                <td>${it.productName} ${it.sku ? `<small>(${it.sku})</small>` : ''}</td>
-                <td>${it.quantity} ${it.unit}</td>
-                <td>₹${it.unitPrice.toFixed(2)}</td>
-                <td>${it.gstPercentage}%</td>
-                <td style="text-align: right;">₹${it.total.toFixed(2)}</td>
-              </tr>
-            `).join('')}
-          </tbody>
-        </table>
+    const doc = new PDFDocument({ size: 'A4', margin: 18 });
+    const buffers: Buffer[] = [];
 
-        <div class="totals">
-          <div class="totals-row"><span>Subtotal:</span><span>₹${inv.subtotal.toFixed(2)}</span></div>
-          <div class="totals-row"><span>Discount:</span><span>-₹${inv.discount.toFixed(2)}</span></div>
-          <div class="totals-row"><span>CGST:</span><span>₹${inv.cgst.toFixed(2)}</span></div>
-          <div class="totals-row"><span>SGST:</span><span>₹${inv.sgst.toFixed(2)}</span></div>
-          <div class="totals-row grand"><span>Grand Total:</span><span>₹${inv.grandTotal.toFixed(2)}</span></div>
-        </div>
-      </body>
-      </html>
-    `;
+    doc.on('data', (chunk: Buffer) => buffers.push(chunk));
 
-    return { success: true, data: html };
+    const pdfBufferPromise = new Promise<Buffer>((resolve, reject) => {
+      doc.on('end', () => resolve(Buffer.concat(buffers)));
+      doc.on('error', err => reject(err));
+    });
+
+    const left = 18;
+    const width = 559.28;
+    let y = 18;
+
+    // Title Banner
+    doc.rect(left, y, width, 24).lineWidth(1.5).stroke('#000000');
+    doc.font('Helvetica-Bold').fontSize(11).fillColor('#000000').text('AANZARA FMCG - INVOICE', left, y + 6, { width, align: 'center' });
+    y += 28;
+
+    // Customer & Agent Header Table (4 columns)
+    const colW1 = 110, colW2 = 170, colW3 = 110, colW4 = 169.28;
+    const rowH = 18;
+
+    const drawHeaderRow = (yPos: number, c1Label: string, c1Val: string, c2Label: string, c2Val: string) => {
+      // Cell 1 Label
+      doc.rect(left, yPos, colW1, rowH).stroke('#000000');
+      doc.font('Helvetica-Bold').fontSize(8).text(c1Label, left + 4, yPos + 5);
+      // Cell 1 Value
+      doc.rect(left + colW1, yPos, colW2, rowH).stroke('#000000');
+      doc.font('Helvetica').fontSize(8).text(c1Val, left + colW1 + 4, yPos + 5, { width: colW2 - 8 });
+
+      // Cell 2 Label
+      doc.rect(left + colW1 + colW2, yPos, colW3, rowH).stroke('#000000');
+      doc.font('Helvetica-Bold').fontSize(8).text(c2Label, left + colW1 + colW2 + 4, yPos + 5);
+      // Cell 2 Value
+      doc.rect(left + colW1 + colW2 + colW3, yPos, colW4, rowH).stroke('#000000');
+      doc.font('Helvetica').fontSize(8).text(c2Val, left + colW1 + colW2 + colW3 + 4, yPos + 5, { width: colW4 - 8 });
+    };
+
+    drawHeaderRow(y, 'Customer Name:', inv.customerName || '—', 'Agent Name', inv.agentName || 'SAJIN CLARET');
+    y += rowH;
+    drawHeaderRow(y, 'Mobile Number :', inv.customerPhone || '—', 'Mobile Number', inv.agentPhone || '—');
+    y += rowH;
+    drawHeaderRow(y, 'Address :', inv.customerAddress || inv.businessAddress || '—', '', '');
+    y += rowH;
+
+    // Summary row inside grid
+    doc.rect(left, y, colW1 + colW2, rowH).stroke('#000000');
+    doc.font('Helvetica-Bold').fontSize(8).text('Product Count', left + 4, y + 5);
+    doc.font('Helvetica').fontSize(8).text(`${totalQty}`, left + colW1 + 4, y + 5);
+
+    doc.rect(left + colW1 + colW2, y, colW3, rowH).stroke('#000000');
+    doc.font('Helvetica-Bold').fontSize(8).text('Total Price', left + colW1 + colW2 + 4, y + 5);
+    doc.rect(left + colW1 + colW2 + colW3, y, colW4, rowH).stroke('#000000');
+    doc.font('Helvetica-Bold').fontSize(8).text(`Rs.${inv.grandTotal.toFixed(1)}/-`, left + colW1 + colW2 + colW3 + 4, y + 5);
+    y += rowH + 6;
+
+    // Product Table Headers (7 columns)
+    const pCols = [155, 45, 65, 65, 45, 90, 94.28];
+    const headers = ['Product Name', 'Qty', 'MRP Price', 'Discount %', 'TAX', 'OUR MRP Price', 'Customer Profit'];
+
+    let currX = left;
+    doc.rect(left, y, width, 18).fillAndStroke('#e2e8f0', '#000000').fillColor('#000000');
+    for (let i = 0; i < headers.length; i++) {
+      doc.font('Helvetica-Bold').fontSize(7).text(headers[i], currX + 2, y + 5, { width: pCols[i] - 4, align: 'center' });
+      currX += pCols[i];
+    }
+    y += 18;
+
+    // Product Rows
+    for (const item of inv.items) {
+      const sub = item.unitPrice * item.quantity;
+      const discPct = sub > 0 ? Math.round((item.discount / sub) * 100) : 0;
+      const q = item.quantity === 0 ? 1 : item.quantity;
+      const ourMrp = (sub - item.discount + item.gstAmount) / q;
+      const profit = item.unitPrice - ourMrp;
+
+      const rowVals = [
+        item.productName,
+        `${item.quantity}`,
+        `${item.unitPrice}`,
+        `${discPct}%`,
+        `${item.gstPercentage}`,
+        `${ourMrp.toFixed(1)}`,
+        `${profit.toFixed(1)}`
+      ];
+
+      doc.rect(left, y, width, 18).stroke('#000000');
+      currX = left;
+      for (let i = 0; i < rowVals.length; i++) {
+        doc.font('Helvetica').fontSize(7).text(rowVals[i], currX + 2, y + 5, { width: pCols[i] - 4, align: i === 0 ? 'left' : 'center' });
+        currX += pCols[i];
+      }
+      y += 18;
+    }
+
+    // Total Row
+    const totalRowVals = [
+      'TOTAL',
+      `${totalQty}`,
+      `${totalMrp}`,
+      `${avgDisc}%`,
+      `${totalGstAmt.toFixed(0)}`,
+      `${totalOurMrp.toFixed(1)}`,
+      `${totalProfitVal.toFixed(1)}`
+    ];
+    doc.rect(left, y, width, 18).fillAndStroke('#e2e8f0', '#000000').fillColor('#000000');
+    currX = left;
+    for (let i = 0; i < totalRowVals.length; i++) {
+      doc.font('Helvetica-Bold').fontSize(7).text(totalRowVals[i], currX + 2, y + 5, { width: pCols[i] - 4, align: i === 0 ? 'left' : 'center' });
+      currX += pCols[i];
+    }
+    y += 22;
+
+    // Customer Profit & Amount Paid Banners
+    doc.rect(left, y, width, 18).stroke('#000000');
+    doc.font('Helvetica').fontSize(8).fillColor('#000000').text(`Total profit of Customer : Rs. ${totalProfitVal.toFixed(1)} / -`, left + 6, y + 5);
+    y += 18;
+
+    doc.rect(left, y, width, 20).stroke('#000000');
+    doc.font('Helvetica-Bold').fontSize(9).fillColor('#000000').text(`TOTAL AMOUNT PAID : Rs. ${inv.grandTotal.toFixed(1)} / -`, left + 6, y + 5);
+    y += 24;
+
+    // Business Footer Info
+    doc.rect(left, y, width, 14).stroke('#000000');
+    doc.font('Helvetica-Bold').fontSize(5).text('AANZARA CORPORATE @ ENSURE GROWTH SOLUTION PRIVATE LIMITED is an active Indian private limited company in the financial activities sector, incorporated on May 16, 2023 / CIN - U66190TN2023PTC160474', left, y + 4, { width, align: 'center' });
+    y += 14;
+
+    doc.rect(left, y, width, 14).stroke('#000000');
+    doc.font('Helvetica').fontSize(5).text('Email : Egsfinance2025@gmail.com, Aanzaracorporate@gmail.com, aanzarabusiness@gmail.com / for compliance - +91 8754850826', left, y + 4, { width, align: 'center' });
+    y += 14;
+
+    doc.rect(left, y, width, 14).stroke('#000000');
+    doc.font('Helvetica-Bold').fontSize(6).text('Managing Director : PRETHIVIRAJ, RAJAN JASMINE / MOBILE - +91 8754850826', left, y + 4, { width, align: 'center' });
+    y += 18;
+
+    // Terms & Conditions + QR Code Section
+    const termsW = 419.28;
+    const qrW = 140;
+
+    doc.rect(left, y, termsW, 110).stroke('#000000');
+    doc.font('Helvetica-Bold').fontSize(6).text('Terms & Conditions', left + 6, y + 6);
+    const termsText = [
+      '1. Subscription refund will not be provided under any circumstances.',
+      '2. Stock order amount refund is applicable only if cancellation request is submitted before booking closes. Once booking is closed, no refund will be issued.',
+      '3. Only stock order amount is refundable; subscription fee is non-refundable.',
+      '4. If product is defective or unsatisfactory, replacement will be provided upon proof of product movement. No cash refund will be given.',
+      '5. Advance notice (at least 60 days before expiry date) is mandatory for return/replacement of products. Post-expiry items will not be accepted.'
+    ];
+
+    let tY = y + 16;
+    for (const term of termsText) {
+      doc.font('Helvetica').fontSize(5.5).text(term, left + 6, tY, { width: termsW - 12 });
+      tY += 16;
+    }
+
+    // QR Box
+    doc.rect(left + termsW, y, qrW, 110).stroke('#000000');
+    doc.rect(left + termsW + 40, y + 10, 60, 45).stroke('#000000');
+    doc.font('Helvetica-Bold').fontSize(8).text('QR', left + termsW + 40, y + 25, { width: 60, align: 'center' });
+
+    doc.font('Helvetica').fontSize(5).text('Scan to Verify', left + termsW, y + 58, { width: qrW, align: 'center' });
+    doc.font('Helvetica-Bold').fontSize(6).text('AANZARA FMCG', left + termsW, y + 67, { width: qrW, align: 'center' });
+    doc.font('Helvetica').fontSize(5).text(`Total: Rs.${inv.grandTotal.toFixed(1)}`, left + termsW, y + 76, { width: qrW, align: 'center' });
+    doc.font('Helvetica').fontSize(5).text(inv.invoiceNumber, left + termsW, y + 85, { width: qrW, align: 'center' });
+
+    y += 114;
+
+    // Signature Block
+    const sigW = width / 2;
+    doc.rect(left, y, sigW, 40).stroke('#000000');
+    doc.font('Helvetica-Bold').fontSize(7).text('Company Seal / Signature', left + 6, y + 26);
+
+    doc.rect(left + sigW, y, sigW, 40).stroke('#000000');
+    doc.font('Helvetica-Bold').fontSize(7).text('Customer Signature', left + sigW + 6, y + 26, { width: sigW - 12, align: 'right' });
+
+    y += 44;
+    doc.font('Helvetica').fontSize(6).text('1/1', left, y, { width, align: 'right' });
+
+    doc.end();
+
+    const pdfBuffer = await pdfBufferPromise;
+    return { success: true, data: pdfBuffer.toString('base64') };
   } catch (error: any) {
     return { success: false, message: error.message };
   }
@@ -139,11 +265,18 @@ function mapSaleToInvoiceDto(sale: any): InvoiceDto {
   return {
     invoiceNumber: sale.invoiceNumber,
     invoiceDate: sale.createdAt.toISOString(),
+    agentName: sale.agentName || sale.salesWorker?.name || 'SAJIN CLARET',
+    agentPhone: sale.agentPhone || sale.salesWorker?.phone || '',
     customerName: sale.customerName,
     customerPhone: sale.customerPhone,
     customerEmail: sale.customerEmail,
     customerAddress: sale.customerAddress,
     customerGSTIN: sale.customerGSTIN,
+    businessName: 'AANZARA FOOD AND FMCG',
+    businessAddress: 'NO C,Vadakku valiyoor,opposite to sugam hospital valiyoor,tirunelveli-627117',
+    businessPhone: '8754850826',
+    businessEmail: 'Aanzaracorporate@gmail.com',
+    businessGSTIN: '',
     subtotal: sale.subtotal,
     discount: sale.discount,
     taxableAmount: sale.subtotal - sale.discount,
@@ -154,7 +287,7 @@ function mapSaleToInvoiceDto(sale: any): InvoiceDto {
     paymentMethod: sale.paymentMethod,
     paymentStatus: sale.paymentStatus,
     transactionId: sale.payments && sale.payments.length > 0 ? sale.payments[0].transactionId : null,
-    items: sale.saleItems.map((i: any) => ({
+    items: (sale.saleItems || []).map((i: any) => ({
       productName: i.productName,
       sku: i.sku,
       quantity: i.quantity,

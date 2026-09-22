@@ -27,13 +27,19 @@ export const CreateBillPage: React.FC = () => {
   const [manualDiscount, setManualDiscount] = useState<number | undefined>(undefined);
   const [calculation, setCalculation] = useState<BillingCalculationDto | null>(null);
 
-  // Customer & Payment Form
+  // Agent & Customer Form
+  const [agentName, setAgentName] = useState('');
+  const [agentPhone, setAgentPhone] = useState('');
+  const [agentOptions, setAgentOptions] = useState<string[]>([]);
+  const agentPhoneMap = useRef<Map<string, string>>(new Map());
+
   const [customerName, setCustomerName] = useState('');
   const [customerPhone, setCustomerPhone] = useState('');
   const [customerEmail] = useState('');
   const [customerAddress] = useState('');
   const [customerGSTIN] = useState('');
   const [paymentMethod, setPaymentMethod] = useState<'Cash' | 'UPI' | 'Card' | 'Other'>('Cash');
+  const [manualTax, setManualTax] = useState<number | undefined>(undefined);
 
   // Custom Item state
   const [isCustomModal, setIsCustomModal] = useState(false);
@@ -41,6 +47,8 @@ export const CreateBillPage: React.FC = () => {
   const [customPrice, setCustomPrice] = useState(100);
   const [customGst, setCustomGst] = useState(5);
   const [customQty, setCustomQty] = useState(1);
+  const [customUnit, setCustomUnit] = useState('Kg');
+  const [customSku, setCustomSku] = useState('');
 
   const [submitting, setSubmitting] = useState(false);
   const barcodeRef = useRef<HTMLInputElement>(null);
@@ -53,7 +61,44 @@ export const CreateBillPage: React.FC = () => {
     if (barcodeRef.current) {
       barcodeRef.current.focus();
     }
-  }, []);
+
+    // Initialize agent details matching Angular create-bill.component.ts
+    const defaultName = user?.name || 'SAJIN CLARET';
+    const defaultPhone = user?.phone || '';
+    setAgentName(defaultName);
+    setAgentPhone(defaultPhone);
+    if (defaultName) agentPhoneMap.current.set(defaultName, defaultPhone);
+
+    const isAdmin = user?.role === 'Admin';
+    if (isAdmin) {
+      api.users.getPaged({ pageNumber: 1, pageSize: 100 }).then(res => {
+        if (res.success && res.data) {
+          const names: string[] = [];
+          res.data.items.forEach(u => {
+            if (u.name) {
+              names.push(u.name);
+              agentPhoneMap.current.set(u.name, u.phone || '');
+            }
+          });
+          const uniqueNames = Array.from(new Set([...names, defaultName]));
+          setAgentOptions(uniqueNames);
+          if (agentPhoneMap.current.has(defaultName) && !defaultPhone) {
+            setAgentPhone(agentPhoneMap.current.get(defaultName) || '');
+          }
+        }
+      });
+    } else {
+      setAgentOptions([defaultName, 'SAJIN CLARET'].filter((v, i, a) => v && a.indexOf(v) === i));
+    }
+  }, [user]);
+
+  const handleAgentNameChange = (nameVal: string) => {
+    setAgentName(nameVal);
+    const ph = agentPhoneMap.current.get(nameVal.trim());
+    if (ph !== undefined) {
+      setAgentPhone(ph);
+    }
+  };
 
   useEffect(() => {
     if (cart.length > 0) {
@@ -61,7 +106,7 @@ export const CreateBillPage: React.FC = () => {
     } else {
       setCalculation(null);
     }
-  }, [cart, manualDiscount]);
+  }, [cart, manualDiscount, manualTax]);
 
   const recalculateBill = async () => {
     const requestItems: BillingItemRequestDto[] = cart.map(item => ({
@@ -72,10 +117,13 @@ export const CreateBillPage: React.FC = () => {
       customUnitPrice: item.customUnitPrice,
       customGSTPercentage: item.customGSTPercentage,
       customSKU: item.customSKU,
-      customUnit: item.customUnit
+      customUnit: item.customUnit,
+      billingUnit: item.billingUnit,
+      unitsPerBox: item.unitsPerBox,
+      isWholesale: item.isWholesale
     }));
 
-    const res = await api.billing.calculate(requestItems, manualDiscount);
+    const res = await api.billing.calculate(requestItems, manualDiscount, manualTax);
     if (res.success && res.data) {
       setCalculation(res.data);
     } else {
@@ -110,68 +158,79 @@ export const CreateBillPage: React.FC = () => {
   };
 
   const addToCart = (product: ProductSearchDto) => {
-    const existingIndex = cart.findIndex(c => c.productId === product.id && !c.isCustom);
-    if (existingIndex >= 0) {
-      const newCart = [...cart];
-      newCart[existingIndex].quantity += 1;
-      setCart(newCart);
-    } else {
-      setCart([
-        ...cart,
-        {
-          tempId: Math.random().toString(),
-          productId: product.id,
-          productName: product.productName,
-          sku: product.sku,
-          unitPrice: product.sellingPrice,
-          quantity: 1,
-          stockAvailable: product.stockQuantity,
-          isCustom: false
-        }
-      ]);
-    }
+    const tempId = `item_${Date.now()}_${Math.random()}`;
+    const newItem: CartItem = {
+      tempId,
+      productId: product.id,
+      productName: product.productName,
+      sku: product.sku,
+      quantity: 1,
+      unitPrice: product.sellingPrice,
+      isCustom: false,
+      stockAvailable: product.stockQuantity,
+      billingUnit: product.unit,
+      unitsPerBox: 12,
+      isWholesale: false
+    };
+
+    setCart(prev => {
+      const existingIdx = prev.findIndex(i => !i.isCustom && i.productId === product.id && i.billingUnit === product.unit);
+      if (existingIdx >= 0) {
+        const updated = [...prev];
+        updated[existingIdx].quantity += 1;
+        return updated;
+      }
+      return [...prev, newItem];
+    });
+
     setSearchTerm('');
     setSearchResults([]);
   };
 
   const handleAddCustomItem = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!customName.trim() || customPrice <= 0) {
-      showToast('Please enter valid custom product details', 'warning');
+    if (!customName.trim()) {
+      showToast('Custom item name required', 'warning');
+      return;
+    }
+    if (customPrice <= 0) {
+      showToast('Price must be positive', 'warning');
       return;
     }
 
-    setCart([
-      ...cart,
-      {
-        tempId: Math.random().toString(),
-        isCustom: true,
-        customProductName: customName.trim(),
-        productName: `${customName.trim()} (Custom)`,
-        unitPrice: customPrice,
-        quantity: customQty,
-        customUnitPrice: customPrice,
-        customGSTPercentage: customGst,
-        customUnit: 'Kg'
-      }
-    ]);
+    const tempId = `custom_${Date.now()}_${Math.random()}`;
+    const newItem: CartItem = {
+      tempId,
+      productName: customName.trim(),
+      quantity: customQty,
+      unitPrice: customPrice,
+      isCustom: true,
+      customProductName: customName.trim(),
+      customUnitPrice: customPrice,
+      customGSTPercentage: customGst,
+      customSKU: customSku.trim() || 'CUSTOM',
+      customUnit: customUnit,
+      billingUnit: customUnit
+    };
 
+    setCart(prev => [...prev, newItem]);
     setIsCustomModal(false);
     setCustomName('');
     setCustomPrice(100);
-    showToast('Custom item added', 'info');
+    setCustomGst(5);
+    setCustomQty(1);
+    setCustomUnit('Kg');
+    setCustomSku('');
+    showToast(`Added custom product "${newItem.productName}"`, 'success');
   };
 
   const updateQuantity = (tempId: string, qty: number) => {
-    if (qty <= 0) {
-      removeFromCart(tempId);
-      return;
-    }
-    setCart(cart.map(c => c.tempId === tempId ? { ...c, quantity: qty } : c));
+    if (qty <= 0) return;
+    setCart(prev => prev.map(item => item.tempId === tempId ? { ...item, quantity: qty } : item));
   };
 
   const removeFromCart = (tempId: string) => {
-    setCart(cart.filter(c => c.tempId !== tempId));
+    setCart(prev => prev.filter(item => item.tempId !== tempId));
   };
 
   const handleCreateBill = async () => {
@@ -181,14 +240,17 @@ export const CreateBillPage: React.FC = () => {
     }
 
     setSubmitting(true);
-    const request: CreateBillRequestDto = {
-      customerName,
-      customerPhone,
-      customerEmail,
-      customerAddress,
-      customerGSTIN,
+    const requestPayload: CreateBillRequestDto = {
+      customerName: customerName.trim() || undefined,
+      customerPhone: customerPhone.trim() || undefined,
+      customerEmail: customerEmail.trim() || undefined,
+      customerAddress: customerAddress.trim() || undefined,
+      customerGSTIN: customerGSTIN.trim() || undefined,
+      agentName: agentName.trim() || undefined,
+      agentPhone: agentPhone.trim() || undefined,
       paymentMethod,
       manualDiscount,
+      manualTaxPercentage: manualTax,
       items: cart.map(item => ({
         productId: item.productId,
         quantity: item.quantity,
@@ -197,11 +259,14 @@ export const CreateBillPage: React.FC = () => {
         customUnitPrice: item.customUnitPrice,
         customGSTPercentage: item.customGSTPercentage,
         customSKU: item.customSKU,
-        customUnit: item.customUnit
+        customUnit: item.customUnit,
+        billingUnit: item.billingUnit,
+        unitsPerBox: item.unitsPerBox,
+        isWholesale: item.isWholesale
       }))
     };
 
-    const res = await api.billing.create(request, user?.userId || 1);
+    const res = await api.billing.create(requestPayload, user?.id || user?.userId || 1);
     setSubmitting(false);
 
     if (res.success && res.data) {
@@ -402,6 +467,17 @@ export const CreateBillPage: React.FC = () => {
             </div>
 
             <div className="form-group">
+              <label className="form-label">Manual Tax % (applies to all items)</label>
+              <input
+                type="number"
+                className="input-control"
+                placeholder="e.g. 5 or 12"
+                value={manualTax ?? ''}
+                onChange={e => setManualTax(e.target.value !== '' ? Number(e.target.value) : undefined)}
+              />
+            </div>
+
+            <div className="form-group">
               <label className="form-label">Payment Method</label>
               <select
                 className="select-control"
@@ -413,6 +489,40 @@ export const CreateBillPage: React.FC = () => {
                 <option value="Card">Credit / Debit Card</option>
                 <option value="Other">Other Mode</option>
               </select>
+            </div>
+
+            <div style={{ borderTop: '1px solid var(--bg-card-border)', paddingTop: '16px', marginTop: '16px' }}>
+              <div style={{ fontWeight: 600, fontSize: '14px', marginBottom: '12px' }}>Agent Information</div>
+              <div className="form-group">
+                <label className="form-label" style={{ fontSize: '12px' }}>Agent Name</label>
+                {agentOptions.length > 0 ? (
+                  <select
+                    className="select-control"
+                    value={agentName}
+                    onChange={e => handleAgentNameChange(e.target.value)}
+                  >
+                    {agentOptions.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+                  </select>
+                ) : (
+                  <input
+                    type="text"
+                    className="input-control"
+                    placeholder="Agent Name"
+                    value={agentName}
+                    onChange={e => setAgentName(e.target.value)}
+                  />
+                )}
+              </div>
+              <div className="form-group">
+                <label className="form-label" style={{ fontSize: '12px' }}>Agent Phone</label>
+                <input
+                  type="text"
+                  className="input-control"
+                  placeholder="Agent Phone"
+                  value={agentPhone}
+                  onChange={e => setAgentPhone(e.target.value)}
+                />
+              </div>
             </div>
 
             <div style={{ borderTop: '1px solid var(--bg-card-border)', paddingTop: '16px', marginTop: '16px' }}>

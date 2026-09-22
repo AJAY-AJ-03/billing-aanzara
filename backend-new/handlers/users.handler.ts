@@ -70,8 +70,18 @@ export async function getPagedUsersHandler(
   }
 }
 
-export async function getUserByIdHandler(id: number): Promise<ApiResponse<UserDto | null>> {
+export async function getUserByIdHandler(
+  id: number,
+  requestingUser?: { id: number; role: string } | null
+): Promise<ApiResponse<UserDto | null>> {
   try {
+    if (!requestingUser) {
+      return { success: false, message: 'Unauthenticated: Access denied' };
+    }
+    if (requestingUser.role !== 'Admin' && requestingUser.id !== id) {
+      return { success: false, message: 'Forbidden: Access denied' };
+    }
+
     const prisma = getPrismaClient();
     const u = await prisma.user.findUnique({ where: { id } });
     if (!u) return { success: true, data: null };

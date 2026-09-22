@@ -106,6 +106,8 @@ model Sale {
   customerGSTIN   String?
   salesWorkerId   Int
   salesWorker     User       @relation(fields: [salesWorkerId], references: [id], onDelete: Restrict)
+  agentName       String?
+  agentPhone      String?
   subtotal        Float
   discount        Float
   gstAmount       Float

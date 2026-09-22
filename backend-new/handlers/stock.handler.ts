@@ -68,6 +68,8 @@ export async function getStockTransactionsHandler(
   }
 }
 
+import { ConvertBillingQty as ConvertToBaseUnit } from './billing.handler';
+
 export async function stockAdjustHandler(
   dto: StockAdjustmentDto,
   userId?: number
@@ -83,26 +85,33 @@ export async function stockAdjustHandler(
     if (!product) return { success: false, message: 'Product not found' };
 
     const prev = product.stockQuantity;
+    const qtyInBase = ConvertToBaseUnit(dto.quantity, dto.unit, product.unit, dto.unitsPerBox);
     let newStock = prev;
 
     switch (dto.transactionType) {
       case 'Adjustment':
-        newStock = prev + dto.quantity;
+        newStock = prev + qtyInBase;
         break;
       case 'Damaged':
       case 'Expired':
-        newStock = prev - Math.abs(dto.quantity);
+        newStock = prev - Math.abs(qtyInBase);
         break;
       case 'Return':
-        newStock = prev + Math.abs(dto.quantity);
+        newStock = prev + Math.abs(qtyInBase);
         break;
       default:
-        newStock = prev + dto.quantity;
+        newStock = prev + qtyInBase;
         break;
     }
 
     if (newStock < 0) {
       return { success: false, message: 'Stock cannot be negative' };
+    }
+
+    let remarks = dto.remarks || null;
+    if (dto.unit && dto.unit.trim().toLowerCase() !== product.unit.trim().toLowerCase()) {
+      const convStr = `${dto.quantity} ${dto.unit} (${qtyInBase.toFixed(3)} ${product.unit} converted${dto.unitsPerBox ? ` @ ${dto.unitsPerBox}/${dto.unit}` : ''})`;
+      remarks = remarks ? `${convStr} | ${remarks}` : convStr;
     }
 
     const result = await prisma.$transaction(async tx => {
@@ -115,10 +124,10 @@ export async function stockAdjustHandler(
         data: {
           productId: product.id,
           transactionType: dto.transactionType,
-          quantity: dto.quantity,
+          quantity: qtyInBase,
           previousStock: prev,
           newStock,
-          remarks: dto.remarks || null,
+          remarks,
           createdBy: userId || null
         },
         include: { product: true, creator: true }
@@ -159,28 +168,50 @@ export async function stockInHandler(
       return { success: false, message: parseResult.error.errors[0]?.message || 'Invalid stock-in data' };
     }
 
+    if (dto.manualTaxPercentage !== undefined && dto.manualTaxPercentage !== null) {
+      if (dto.manualTaxPercentage < 0 || dto.manualTaxPercentage > 100) {
+        return { success: false, message: 'Tax must be between 0 and 100' };
+      }
+    }
+
     const prisma = getPrismaClient();
     const product = await prisma.product.findUnique({ where: { id: dto.productId } });
     if (!product) return { success: false, message: 'Product not found' };
 
+    const qtyInBase = ConvertToBaseUnit(dto.quantity, dto.unit, product.unit, dto.unitsPerBox);
     const prev = product.stockQuantity;
-    const newStock = prev + dto.quantity;
+    const newStock = prev + qtyInBase;
+
+    let remarks = dto.remarks || null;
+    if (dto.unit && dto.unit.trim().toLowerCase() !== product.unit.trim().toLowerCase()) {
+      const convStr = `${dto.quantity} ${dto.unit} (${qtyInBase.toFixed(3)} ${product.unit} converted${dto.unitsPerBox ? ` @ ${dto.unitsPerBox}/${dto.unit}` : ''})`;
+      remarks = remarks ? `${convStr} | ${remarks}` : convStr;
+    }
+    if (dto.manualTaxPercentage !== undefined && dto.manualTaxPercentage !== null) {
+      const taxStr = `Tax ${dto.manualTaxPercentage}% applied`;
+      remarks = remarks ? `${taxStr} | ${remarks}` : taxStr;
+    }
+
+    const updateProductData: any = { stockQuantity: newStock };
+    if (dto.manualTaxPercentage !== undefined && dto.manualTaxPercentage !== null) {
+      updateProductData.gstPercentage = dto.manualTaxPercentage;
+    }
 
     const result = await prisma.$transaction(async tx => {
       await tx.product.update({
         where: { id: product.id },
-        data: { stockQuantity: newStock }
+        data: updateProductData
       });
 
       const transactionLog = await tx.stockTransaction.create({
         data: {
           productId: product.id,
           transactionType: 'StockIn',
-          quantity: dto.quantity,
+          quantity: qtyInBase,
           previousStock: prev,
           newStock,
           reference: dto.reference || null,
-          remarks: dto.remarks || null,
+          remarks,
           createdBy: userId || null
         },
         include: { product: true, creator: true }

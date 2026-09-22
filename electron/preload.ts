@@ -2,11 +2,13 @@ import { contextBridge, ipcRenderer } from 'electron';
 
 contextBridge.exposeInMainWorld('api', {
   auth: {
-    login: (req: any) => ipcRenderer.invoke('auth:login', req)
+    login: (req: any) => ipcRenderer.invoke('auth:login', req),
+    logout: () => ipcRenderer.invoke('auth:logout')
   },
   billing: {
-    calculate: (items: any, manualDiscount?: number) => ipcRenderer.invoke('billing:calculate', items, manualDiscount),
-    create: (req: any, salesWorkerId: number) => ipcRenderer.invoke('billing:create', req, salesWorkerId),
+    calculate: (items: any, manualDiscount?: number, manualTaxPercentage?: number) =>
+      ipcRenderer.invoke('billing:calculate', items, manualDiscount, manualTaxPercentage),
+    create: (req: any, salesWorkerId?: number) => ipcRenderer.invoke('billing:create', req, salesWorkerId),
     scanBarcode: (barcode: string) => ipcRenderer.invoke('billing:scanBarcode', barcode)
   },
   products: {
@@ -16,7 +18,8 @@ contextBridge.exposeInMainWorld('api', {
     update: (id: number, dto: any) => ipcRenderer.invoke('products:update', id, dto),
     toggle: (id: number) => ipcRenderer.invoke('products:toggle', id),
     search: (term: string) => ipcRenderer.invoke('products:search', term),
-    export: () => ipcRenderer.invoke('products:export')
+    export: () => ipcRenderer.invoke('products:export'),
+    import: (base64Data: string) => ipcRenderer.invoke('products:import', base64Data)
   },
   categories: {
     getPaged: (req: any) => ipcRenderer.invoke('categories:getPaged', req),
@@ -28,8 +31,8 @@ contextBridge.exposeInMainWorld('api', {
   },
   stock: {
     getTransactions: (productId: number, req: any) => ipcRenderer.invoke('stock:getTransactions', productId, req),
-    adjust: (dto: any, userId: number) => ipcRenderer.invoke('stock:adjust', dto, userId),
-    stockIn: (dto: any, userId: number) => ipcRenderer.invoke('stock:stockIn', dto, userId),
+    adjust: (dto: any, userId?: number) => ipcRenderer.invoke('stock:adjust', dto, userId),
+    stockIn: (dto: any, userId?: number) => ipcRenderer.invoke('stock:stockIn', dto, userId),
     getLowStock: () => ipcRenderer.invoke('stock:getLowStock'),
     getOutOfStock: () => ipcRenderer.invoke('stock:getOutOfStock'),
     export: () => ipcRenderer.invoke('stock:export')
@@ -43,7 +46,11 @@ contextBridge.exposeInMainWorld('api', {
     toggle: (id: number) => ipcRenderer.invoke('offers:toggle', id)
   },
   sales: {
-    getPaged: (req: any) => ipcRenderer.invoke('sales:getPaged', req)
+    getPaged: (req: any) => ipcRenderer.invoke('sales:getPaged', req),
+    getById: (id: number) => ipcRenderer.invoke('sales:getById', id),
+    getByInvoice: (invNum: string) => ipcRenderer.invoke('sales:getByInvoice', invNum),
+    update: (id: number, dto: any) => ipcRenderer.invoke('sales:update', id, dto),
+    delete: (id: number) => ipcRenderer.invoke('sales:delete', id)
   },
   reports: {
     monthlySales: (year?: number) => ipcRenderer.invoke('reports:monthlySales', year),
@@ -69,6 +76,7 @@ contextBridge.exposeInMainWorld('api', {
     generatePdf: (id: number) => ipcRenderer.invoke('invoices:generatePdf', id)
   },
   app: {
-    print: () => ipcRenderer.invoke('app:print')
+    print: () => ipcRenderer.invoke('app:print'),
+    savePdfDialog: (base64Data: string, filename?: string) => ipcRenderer.invoke('app:savePdfDialog', base64Data, filename)
   }
 });

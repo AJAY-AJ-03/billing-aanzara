@@ -21,6 +21,11 @@ export interface PaginationRequest {
   search?: string;
   sortBy?: string;
   isDescending?: boolean;
+  salesWorkerId?: number;
+  paymentMethod?: string;
+  paymentStatus?: string;
+  fromDate?: string;
+  toDate?: string;
 }
 
 // User & Auth Types
@@ -205,11 +210,23 @@ export interface StockAdjustmentDto {
   remarks?: string;
 }
 
+export interface StockAdjustmentDto {
+  productId: number;
+  transactionType: 'Adjustment' | 'Damaged' | 'Expired' | 'Return';
+  quantity: number;
+  remarks?: string;
+  unit?: string;
+  unitsPerBox?: number;
+}
+
 export interface StockInDto {
   productId: number;
   quantity: number;
   reference?: string;
   remarks?: string;
+  unit?: string;
+  unitsPerBox?: number;
+  manualTaxPercentage?: number;
 }
 
 export interface LowStockDto {
@@ -231,6 +248,9 @@ export interface BillingItemRequestDto {
   customGSTPercentage?: number;
   customSKU?: string;
   customUnit?: string;
+  billingUnit?: string;
+  unitsPerBox?: number;
+  isWholesale?: boolean;
 }
 
 export interface BillingCalculatedItemDto {
@@ -267,6 +287,9 @@ export interface CreateBillRequestDto {
   customerGSTIN?: string;
   paymentMethod: 'Cash' | 'UPI' | 'Card' | 'Other';
   manualDiscount?: number;
+  manualTaxPercentage?: number;
+  agentName?: string;
+  agentPhone?: string;
   items: BillingItemRequestDto[];
 }
 
@@ -296,11 +319,18 @@ export interface InvoiceItemDto {
 export interface InvoiceDto {
   invoiceNumber: string;
   invoiceDate: string;
+  agentName?: string | null;
+  agentPhone?: string | null;
   customerName?: string | null;
   customerPhone?: string | null;
   customerEmail?: string | null;
   customerAddress?: string | null;
   customerGSTIN?: string | null;
+  businessName?: string;
+  businessAddress?: string;
+  businessPhone?: string;
+  businessEmail?: string;
+  businessGSTIN?: string;
   subtotal: number;
   discount: number;
   taxableAmount: number;
@@ -318,6 +348,8 @@ export interface InvoiceDto {
 export interface SaleListItemDto {
   id: number;
   invoiceNumber: string;
+  agentName?: string | null;
+  agentPhone?: string | null;
   customerName?: string | null;
   customerPhone?: string | null;
   salesWorkerName?: string | null;
@@ -325,6 +357,56 @@ export interface SaleListItemDto {
   paymentMethod: string;
   paymentStatus: string;
   createdAt: string;
+}
+
+export interface PaymentDto {
+  id: number;
+  paymentMethod: string;
+  amount: number;
+  transactionId?: string | null;
+  status: string;
+  paidAt?: string | null;
+}
+
+export interface UpdateSaleDto {
+  agentName?: string | null;
+  agentPhone?: string | null;
+  customerName?: string | null;
+  customerPhone?: string | null;
+  customerEmail?: string | null;
+  customerAddress?: string | null;
+  customerGSTIN?: string | null;
+  paymentMethod?: string;
+  manualDiscount?: number | null;
+  manualTaxPercentage?: number | null;
+  items?: BillingItemRequestDto[];
+}
+
+export interface SaleDto {
+  id: number;
+  invoiceNumber: string;
+  agentName?: string | null;
+  agentPhone?: string | null;
+  customerId?: number | null;
+  customerName?: string | null;
+  customerPhone?: string | null;
+  customerEmail?: string | null;
+  customerAddress?: string | null;
+  customerGSTIN?: string | null;
+  salesWorkerId: number;
+  salesWorkerName?: string | null;
+  subtotal: number;
+  discount: number;
+  gstAmount: number;
+  cgstAmount: number;
+  sgstAmount: number;
+  grandTotal: number;
+  paymentMethod: string;
+  paymentStatus: string;
+  saleStatus: string;
+  createdAt: string;
+  items: InvoiceItemDto[];
+  payments: PaymentDto[];
 }
 
 export interface MonthlySalesDto {

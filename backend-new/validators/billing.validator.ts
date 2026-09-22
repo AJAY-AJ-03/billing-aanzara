@@ -8,16 +8,22 @@ export const billingItemRequestSchema = z.object({
   customUnitPrice: z.number().optional(),
   customGSTPercentage: z.number().optional(),
   customSKU: z.string().optional(),
-  customUnit: z.string().optional()
+  customUnit: z.string().optional(),
+  billingUnit: z.string().optional(),
+  unitsPerBox: z.number().optional().nullable(),
+  isWholesale: z.boolean().optional()
 });
 
 export const createBillRequestSchema = z.object({
-  customerName: z.string().optional(),
-  customerPhone: z.string().optional(),
-  customerEmail: z.string().optional(),
-  customerAddress: z.string().optional(),
-  customerGSTIN: z.string().optional(),
+  customerName: z.string().optional().nullable(),
+  customerPhone: z.string().optional().nullable(),
+  customerEmail: z.string().optional().nullable(),
+  customerAddress: z.string().optional().nullable(),
+  customerGSTIN: z.string().optional().nullable(),
   paymentMethod: z.enum(['Cash', 'UPI', 'Card', 'Other']),
-  manualDiscount: z.number().optional(),
+  manualDiscount: z.number().optional().nullable(),
+  manualTaxPercentage: z.number().optional().nullable(),
+  agentName: z.string().optional().nullable(),
+  agentPhone: z.string().optional().nullable(),
   items: z.array(billingItemRequestSchema).min(1, 'At least one item is required')
 });
