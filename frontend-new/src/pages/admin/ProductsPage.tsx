@@ -1,10 +1,41 @@
-import React, { useEffect, useState } from 'react';
+// src/pages/admin/ProductsPage.tsx
+import React, { useEffect, useRef, useState } from 'react';
 import api from '../../services/ipcApi';
 import type { ProductDto, CategoryDto, CreateProductDto } from '../../../../shared/types/ipc';
 import { useToast } from '../../context/ToastContext';
 import Modal from '../../components/common/Modal';
 import Pagination from '../../components/common/Pagination';
-import { Plus, Search, Download, Edit2, ToggleLeft, ToggleRight } from 'lucide-react';
+import ConfirmationDialog from '../../components/common/ConfirmationDialog';
+import {
+  Plus,
+  Search,
+  X,
+  Download,
+  Upload,
+  Edit2,
+  ToggleLeft,
+  ToggleRight,
+  PackageSearch,
+  Loader2,
+} from 'lucide-react';
+
+const UNITS = ['Piece', 'Kg', 'Gram', 'Liter', 'ML', 'Box', 'Pack', 'Dozen'];
+const GST_RATES = [0, 5, 12, 18, 28];
+const PAGE_SIZE = 8;
+
+const emptyForm = (defaultCategoryId: number): CreateProductDto => ({
+  sku: `SKU-${Date.now().toString().slice(-5)}`,
+  barcode: '',
+  productName: '',
+  categoryId: defaultCategoryId,
+  description: '',
+  purchasePrice: 0,
+  sellingPrice: 0,
+  gstPercentage: 5,
+  stockQuantity: 10,
+  minimumStockLevel: 5,
+  unit: 'Piece',
+});
 
 export const ProductsPage: React.FC = () => {
   const [products, setProducts] = useState<ProductDto[]>([]);
@@ -14,25 +45,19 @@ export const ProductsPage: React.FC = () => {
   const [pageNumber, setPageNumber] = useState(1);
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(false);
+  const [importing, setImporting] = useState(false);
 
-  // Modal State
+  // Modal state
   const [modalOpen, setModalOpen] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
-  const [formData, setFormData] = useState<CreateProductDto>({
-    sku: '',
-    barcode: '',
-    productName: '',
-    categoryId: 0,
-    description: '',
-    purchasePrice: 0,
-    sellingPrice: 0,
-    gstPercentage: 5,
-    stockQuantity: 0,
-    minimumStockLevel: 5,
-    unit: 'Piece'
-  });
+  const [saving, setSaving] = useState(false);
+  const [formData, setFormData] = useState<CreateProductDto>(emptyForm(0));
+
+  // Deactivate confirmation
+  const [deactivateTarget, setDeactivateTarget] = useState<ProductDto | null>(null);
 
   const { showToast } = useToast();
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     loadCategories();
@@ -47,14 +72,14 @@ export const ProductsPage: React.FC = () => {
     if (res.success && res.data) {
       setCategories(res.data);
       if (res.data.length > 0) {
-        setFormData(prev => ({ ...prev, categoryId: res.data![0].id }));
+        setFormData((prev) => ({ ...prev, categoryId: res.data![0].id }));
       }
     }
   };
 
   const loadProducts = async () => {
     setLoading(true);
-    const res = await api.products.getPaged({ pageNumber, pageSize: 8, search });
+    const res = await api.products.getPaged({ pageNumber, pageSize: PAGE_SIZE, search });
     if (res.success && res.data) {
       setProducts(res.data.items);
       setTotalCount(res.data.totalCount);
@@ -77,67 +102,79 @@ export const ProductsPage: React.FC = () => {
         gstPercentage: p.gstPercentage,
         stockQuantity: p.stockQuantity,
         minimumStockLevel: p.minimumStockLevel,
-        unit: p.unit
+        unit: p.unit,
       });
     } else {
       setEditingId(null);
-      setFormData({
-        sku: `SKU-${Date.now().toString().slice(-5)}`,
-        barcode: '',
-        productName: '',
-        categoryId: categories[0]?.id || 1,
-        description: '',
-        purchasePrice: 0,
-        sellingPrice: 0,
-        gstPercentage: 5,
-        stockQuantity: 10,
-        minimumStockLevel: 5,
-        unit: 'Piece'
-      });
+      setFormData(emptyForm(categories[0]?.id || 1));
     }
     setModalOpen(true);
   };
 
+  const marginPct =
+    formData.sellingPrice > 0 && formData.purchasePrice > 0
+      ? (((formData.sellingPrice - formData.purchasePrice) / formData.sellingPrice) * 100).toFixed(1)
+      : null;
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (editingId) {
-      const res = await api.products.update(editingId, {
-        productName: formData.productName,
-        categoryId: formData.categoryId,
-        description: formData.description,
-        purchasePrice: formData.purchasePrice,
-        sellingPrice: formData.sellingPrice,
-        gstPercentage: formData.gstPercentage,
-        minimumStockLevel: formData.minimumStockLevel || 5,
-        unit: formData.unit || 'Piece',
-        isActive: true,
-        barcode: formData.barcode
-      });
-      if (res.success) {
-        showToast('Product updated successfully', 'success');
-        setModalOpen(false);
-        loadProducts();
+    setSaving(true);
+    try {
+      if (editingId) {
+        const res = await api.products.update(editingId, {
+          productName: formData.productName,
+          categoryId: formData.categoryId,
+          description: formData.description,
+          purchasePrice: formData.purchasePrice,
+          sellingPrice: formData.sellingPrice,
+          gstPercentage: formData.gstPercentage,
+          minimumStockLevel: formData.minimumStockLevel || 5,
+          unit: formData.unit || 'Piece',
+          isActive: true,
+          barcode: formData.barcode,
+        });
+        if (res.success) {
+          showToast('Product updated', 'success');
+          setModalOpen(false);
+          loadProducts();
+        } else {
+          showToast(res.message || 'Update failed', 'error');
+        }
       } else {
-        showToast(res.message || 'Update failed', 'error');
+        const res = await api.products.create(formData);
+        if (res.success) {
+          showToast('Product created', 'success');
+          setModalOpen(false);
+          loadProducts();
+        } else {
+          showToast(res.message || 'Creation failed', 'error');
+        }
       }
-    } else {
-      const res = await api.products.create(formData);
-      if (res.success) {
-        showToast('Product created successfully', 'success');
-        setModalOpen(false);
-        loadProducts();
-      } else {
-        showToast(res.message || 'Creation failed', 'error');
-      }
+    } finally {
+      setSaving(false);
     }
   };
 
-  const handleToggleStatus = async (id: number) => {
-    const res = await api.products.toggle(id);
+  const handleToggleStatus = async (p: ProductDto) => {
+    if (p.isActive) {
+      setDeactivateTarget(p);
+      return;
+    }
+    const res = await api.products.toggle(p.id);
     if (res.success) {
-      showToast('Product status updated', 'info');
+      showToast(`${p.productName} reactivated`, 'success');
       loadProducts();
     }
+  };
+
+  const confirmDeactivate = async () => {
+    if (!deactivateTarget) return;
+    const res = await api.products.toggle(deactivateTarget.id);
+    if (res.success) {
+      showToast(`${deactivateTarget.productName} deactivated`, 'info');
+      loadProducts();
+    }
+    setDeactivateTarget(null);
   };
 
   const handleExport = async () => {
@@ -147,17 +184,11 @@ export const ProductsPage: React.FC = () => {
       link.href = `data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,${res.data}`;
       link.download = `Products_${new Date().toISOString().split('T')[0]}.xlsx`;
       link.click();
-      showToast('Product list exported to Excel', 'success');
+      showToast('Product list exported', 'success');
     }
   };
 
-  const fileInputRef = React.useRef<HTMLInputElement>(null);
-
-  const handleImportClick = () => {
-    if (fileInputRef.current) {
-      fileInputRef.current.click();
-    }
-  };
+  const handleImportClick = () => fileInputRef.current?.click();
 
   const handleFileImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -170,22 +201,27 @@ export const ProductsPage: React.FC = () => {
         showToast('Failed to read file data', 'error');
         return;
       }
-
-      showToast('Processing Excel import...', 'info');
+      setImporting(true);
       const res = await api.products.import(base64Str);
+      setImporting(false);
       if (res.success && res.data) {
-        showToast(`Successfully imported ${res.data.importedCount} product(s)`, 'success');
+        showToast(`Imported ${res.data.importedCount} product(s)`, 'success');
         if (res.data.errors && res.data.errors.length > 0) {
-          showToast(`Encountered ${res.data.errors.length} row warning(s)`, 'warning');
+          showToast(`${res.data.errors.length} row(s) had warnings`, 'warning');
         }
         loadProducts();
       } else {
         showToast(res.message || 'Import failed', 'error');
       }
     };
-
     reader.readAsDataURL(file);
     if (e.target) e.target.value = '';
+  };
+
+  const stockBadge = (p: ProductDto) => {
+    if (p.stockQuantity <= 0) return 'admin-badge-danger';
+    if (p.stockQuantity <= p.minimumStockLevel) return 'admin-badge-warning';
+    return 'admin-badge-success';
   };
 
   return (
@@ -197,192 +233,267 @@ export const ProductsPage: React.FC = () => {
         onChange={handleFileImport}
         style={{ display: 'none' }}
       />
-      <div className="card">
-        <div className="card-title">
-          <span>Products Inventory ({totalCount})</span>
-          <div style={{ display: 'flex', gap: '12px' }}>
-            <button className="btn btn-secondary" onClick={handleExport}>
+
+      <div className="admin-card">
+        <div className="admin-toolbar">
+          <div className="admin-toolbar-title">
+            <h2>Products</h2>
+            <span>{totalCount} total</span>
+          </div>
+          <div className="admin-toolbar-actions">
+            <button type="button" className="admin-btn admin-btn-secondary" onClick={handleImportClick} disabled={importing}>
+              {importing ? <Loader2 size={16} className="admin-spin" /> : <Upload size={16} />}
+              <span>{importing ? 'Importing…' : 'Import'}</span>
+            </button>
+            <button type="button" className="admin-btn admin-btn-secondary" onClick={handleExport}>
               <Download size={16} />
-              <span>Export Excel</span>
+              <span>Export</span>
             </button>
-            <button className="btn btn-secondary" onClick={handleImportClick}>
-              <Plus size={16} />
-              <span>Import Excel</span>
-            </button>
-            <button className="btn btn-primary" onClick={() => handleOpenModal()}>
+            <button type="button" className="admin-btn admin-btn-primary" onClick={() => handleOpenModal()}>
               <Plus size={16} />
               <span>Add Product</span>
             </button>
           </div>
         </div>
 
-        <div style={{ marginBottom: '20px', position: 'relative', maxWidth: '360px' }}>
-          <Search size={18} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-dim)' }} />
+        <div className="admin-input-wrap" style={{ maxWidth: '360px', marginBottom: '18px' }}>
+          <span className="admin-input-wrap-icon">
+            <Search size={16} />
+          </span>
           <input
             type="text"
-            className="input-control"
-            style={{ paddingLeft: '40px' }}
-            placeholder="Search SKU, Barcode, Product Name..."
+            className="admin-input"
+            placeholder="Search by name, SKU, or barcode…"
             value={search}
-            onChange={e => { setSearch(e.target.value); setPageNumber(1); }}
+            onChange={(e) => {
+              setSearch(e.target.value);
+              setPageNumber(1);
+            }}
           />
+          {search && (
+            <button
+              type="button"
+              className="admin-input-clear"
+              onClick={() => setSearch('')}
+              aria-label="Clear search"
+            >
+              <X size={14} />
+            </button>
+          )}
         </div>
 
-        <div className="table-container">
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th>SKU / Barcode</th>
-                <th>Product Name</th>
-                <th>Category</th>
-                <th>Buy / Sell Price</th>
-                <th>GST %</th>
-                <th>Stock</th>
-                <th>Status</th>
-                <th style={{ textAlign: 'right' }}>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {products.map(p => (
-                <tr key={p.id}>
-                  <td>
-                    <div style={{ fontWeight: 600 }}>{p.sku}</div>
-                    <div style={{ fontSize: '12px', color: 'var(--text-dim)' }}>{p.barcode || '—'}</div>
-                  </td>
-                  <td><strong>{p.productName}</strong></td>
-                  <td>{p.categoryName}</td>
-                  <td>₹{p.purchasePrice} / <strong>₹{p.sellingPrice}</strong></td>
-                  <td>{p.gstPercentage}%</td>
-                  <td>
-                    <span className={`badge ${p.stockQuantity <= 0 ? 'badge-danger' : p.stockQuantity <= p.minimumStockLevel ? 'badge-warning' : 'badge-success'}`}>
-                      {p.stockQuantity} {p.unit}
-                    </span>
-                  </td>
-                  <td>
-                    <span className={`badge ${p.isActive ? 'badge-success' : 'badge-danger'}`}>
-                      {p.isActive ? 'Active' : 'Inactive'}
-                    </span>
-                  </td>
-                  <td style={{ textAlign: 'right' }}>
-                    <button className="btn btn-secondary" style={{ padding: '6px 10px', marginRight: '6px' }} onClick={() => handleOpenModal(p)}>
+        <table className="admin-table">
+          <thead>
+            <tr>
+              <th>SKU / Barcode</th>
+              <th>Product</th>
+              <th>Category</th>
+              <th className="num">Buy / Sell</th>
+              <th className="num">GST</th>
+              <th>Stock</th>
+              <th>Status</th>
+              <th className="num">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {products.map((p) => (
+              <tr key={p.id}>
+                <td>
+                  <div className="admin-cell-primary">{p.sku}</div>
+                  <div className="admin-cell-secondary">{p.barcode || 'No barcode'}</div>
+                </td>
+                <td className="admin-cell-primary">{p.productName}</td>
+                <td style={{ color: 'var(--admin-text-muted)', fontSize: '13px' }}>{p.categoryName}</td>
+                <td className="num">
+                  <div style={{ fontSize: '12px', color: 'var(--admin-text-faint)' }}>₹{p.purchasePrice.toFixed(2)}</div>
+                  <div style={{ fontWeight: 700, color: 'var(--admin-text)' }}>₹{p.sellingPrice.toFixed(2)}</div>
+                </td>
+                <td className="num" style={{ color: 'var(--admin-text-muted)' }}>{p.gstPercentage}%</td>
+                <td>
+                  <span className={`admin-badge ${stockBadge(p)}`}>
+                    {p.stockQuantity} {p.unit}
+                  </span>
+                </td>
+                <td>
+                  <span className={`admin-badge ${p.isActive ? 'admin-badge-success' : 'admin-badge-neutral'}`}>
+                    {p.isActive ? 'Active' : 'Inactive'}
+                  </span>
+                </td>
+                <td>
+                  <div className="admin-cell-actions">
+                    <button
+                      type="button"
+                      className="admin-btn admin-btn-secondary admin-btn-icon"
+                      onClick={() => handleOpenModal(p)}
+                      title="Edit product"
+                    >
                       <Edit2 size={14} />
                     </button>
-                    <button className="btn btn-secondary" style={{ padding: '6px 10px' }} onClick={() => handleToggleStatus(p.id)}>
-                      {p.isActive ? <ToggleRight size={16} style={{ color: 'var(--accent-success)' }} /> : <ToggleLeft size={16} style={{ color: 'var(--text-muted)' }} />}
+                    <button
+                      type="button"
+                      className="admin-btn admin-btn-secondary admin-btn-icon"
+                      onClick={() => handleToggleStatus(p)}
+                      title={p.isActive ? 'Deactivate product' : 'Reactivate product'}
+                    >
+                      {p.isActive ? (
+                        <ToggleRight size={16} style={{ color: 'var(--admin-accent)' }} />
+                      ) : (
+                        <ToggleLeft size={16} style={{ color: 'var(--admin-text-faint)' }} />
+                      )}
                     </button>
-                  </td>
-                </tr>
-              ))}
-              {products.length === 0 && !loading && (
-                <tr>
-                  <td colSpan={8} style={{ textAlign: 'center', padding: '30px', color: 'var(--text-muted)' }}>
-                    No products found matching query.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
 
-        <Pagination pageNumber={pageNumber} totalPages={totalPages} onPageChange={setPageNumber} />
+        {!loading && products.length === 0 && (
+          <div className="admin-empty-block">
+            <div className="admin-empty-icon">
+              <PackageSearch size={20} />
+            </div>
+            <div className="admin-empty-title">
+              {search ? 'No products match your search' : 'No products yet'}
+            </div>
+            <div className="admin-empty-desc">
+              {search ? (
+                <>
+                  Try a different name, SKU, or barcode, or{' '}
+                  <button
+                    type="button"
+                    onClick={() => setSearch('')}
+                    style={{ color: 'var(--admin-accent)', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 600, padding: 0 }}
+                  >
+                    clear the search
+                  </button>
+                  .
+                </>
+              ) : (
+                'Add your first product to start building inventory.'
+              )}
+            </div>
+          </div>
+        )}
+
+        <Pagination
+          pageNumber={pageNumber}
+          totalPages={totalPages}
+          onPageChange={setPageNumber}
+          totalCount={totalCount}
+          pageSize={PAGE_SIZE}
+        />
       </div>
 
-      {/* Modal Form */}
       <Modal isOpen={modalOpen} title={editingId ? 'Edit Product' : 'Add New Product'} onClose={() => setModalOpen(false)}>
         <form onSubmit={handleSubmit}>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
-            <div className="form-group">
-              <label className="form-label">SKU</label>
+          <div className="admin-form-grid-2">
+            <div className="admin-field">
+              <label className="admin-label">SKU</label>
               <input
                 type="text"
-                className="input-control"
+                className="admin-input"
                 value={formData.sku}
-                onChange={e => setFormData({ ...formData, sku: e.target.value })}
+                onChange={(e) => setFormData({ ...formData, sku: e.target.value })}
                 disabled={!!editingId}
                 required
               />
+              {editingId && <span className="admin-form-hint">SKU can't be changed after creation</span>}
             </div>
-            <div className="form-group">
-              <label className="form-label">Barcode</label>
+            <div className="admin-field">
+              <label className="admin-label">Barcode <span className="optional">(optional)</span></label>
               <input
                 type="text"
-                className="input-control"
+                className="admin-input"
                 value={formData.barcode}
-                onChange={e => setFormData({ ...formData, barcode: e.target.value })}
-                placeholder="Barcode (optional)"
+                onChange={(e) => setFormData({ ...formData, barcode: e.target.value })}
+                placeholder="Scan or type barcode"
               />
             </div>
           </div>
 
-          <div className="form-group">
-            <label className="form-label">Product Name</label>
+          <div className="admin-field" style={{ marginTop: '16px' }}>
+            <label className="admin-label">Product Name</label>
             <input
               type="text"
-              className="input-control"
+              className="admin-input"
               value={formData.productName}
-              onChange={e => setFormData({ ...formData, productName: e.target.value })}
+              onChange={(e) => setFormData({ ...formData, productName: e.target.value })}
               required
             />
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
-            <div className="form-group">
-              <label className="form-label">Category</label>
+          <div className="admin-form-grid-2" style={{ marginTop: '16px' }}>
+            <div className="admin-field">
+              <label className="admin-label">Category</label>
               <select
-                className="select-control"
+                className="admin-select"
                 value={formData.categoryId}
-                onChange={e => setFormData({ ...formData, categoryId: Number(e.target.value) })}
+                onChange={(e) => setFormData({ ...formData, categoryId: Number(e.target.value) })}
               >
-                {categories.map(c => (
+                {categories.map((c) => (
                   <option key={c.id} value={c.id}>{c.name}</option>
                 ))}
               </select>
             </div>
-            <div className="form-group">
-              <label className="form-label">Unit</label>
+            <div className="admin-field">
+              <label className="admin-label">Unit</label>
               <select
-                className="select-control"
+                className="admin-select"
                 value={formData.unit}
-                onChange={e => setFormData({ ...formData, unit: e.target.value })}
+                onChange={(e) => setFormData({ ...formData, unit: e.target.value })}
               >
-                {['Piece', 'Kg', 'Gram', 'Liter', 'ML', 'Box', 'Pack', 'Dozen'].map(u => (
+                {UNITS.map((u) => (
                   <option key={u} value={u}>{u}</option>
                 ))}
               </select>
             </div>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px' }}>
-            <div className="form-group">
-              <label className="form-label">Purchase Price (₹)</label>
-              <input
-                type="number"
-                step="0.01"
-                className="input-control"
-                value={formData.purchasePrice}
-                onChange={e => setFormData({ ...formData, purchasePrice: Number(e.target.value) })}
-                required
-              />
+          <div className="admin-form-grid-3" style={{ marginTop: '16px' }}>
+            <div className="admin-field">
+              <label className="admin-label">Purchase Price</label>
+              <div className="admin-money-wrap">
+                <span className="admin-currency">₹</span>
+                <input
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  className="admin-input"
+                  value={formData.purchasePrice}
+                  onChange={(e) => setFormData({ ...formData, purchasePrice: Number(e.target.value) })}
+                  required
+                />
+              </div>
             </div>
-            <div className="form-group">
-              <label className="form-label">Selling Price (₹)</label>
-              <input
-                type="number"
-                step="0.01"
-                className="input-control"
-                value={formData.sellingPrice}
-                onChange={e => setFormData({ ...formData, sellingPrice: Number(e.target.value) })}
-                required
-              />
+            <div className="admin-field">
+              <label className="admin-label">Selling Price</label>
+              <div className="admin-money-wrap">
+                <span className="admin-currency">₹</span>
+                <input
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  className="admin-input"
+                  value={formData.sellingPrice}
+                  onChange={(e) => setFormData({ ...formData, sellingPrice: Number(e.target.value) })}
+                  required
+                />
+              </div>
+              {marginPct && (
+                <span className="admin-form-hint">
+                  {Number(marginPct) >= 0 ? `${marginPct}% margin` : `${marginPct}% — selling below cost`}
+                </span>
+              )}
             </div>
-            <div className="form-group">
-              <label className="form-label">GST %</label>
+            <div className="admin-field">
+              <label className="admin-label">GST</label>
               <select
-                className="select-control"
+                className="admin-select"
                 value={formData.gstPercentage}
-                onChange={e => setFormData({ ...formData, gstPercentage: Number(e.target.value) })}
+                onChange={(e) => setFormData({ ...formData, gstPercentage: Number(e.target.value) })}
               >
-                {[0, 5, 12, 18, 28].map(g => (
+                {GST_RATES.map((g) => (
                   <option key={g} value={g}>{g}%</option>
                 ))}
               </select>
@@ -390,36 +501,53 @@ export const ProductsPage: React.FC = () => {
           </div>
 
           {!editingId && (
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
-              <div className="form-group">
-                <label className="form-label">Initial Stock Quantity</label>
+            <div className="admin-form-grid-2" style={{ marginTop: '16px' }}>
+              <div className="admin-field">
+                <label className="admin-label">Initial Stock Quantity</label>
                 <input
                   type="number"
-                  className="input-control"
+                  min="0"
+                  className="admin-input"
                   value={formData.stockQuantity}
-                  onChange={e => setFormData({ ...formData, stockQuantity: Number(e.target.value) })}
+                  onChange={(e) => setFormData({ ...formData, stockQuantity: Number(e.target.value) })}
                   required
                 />
               </div>
-              <div className="form-group">
-                <label className="form-label">Min Warning Level</label>
+              <div className="admin-field">
+                <label className="admin-label">Low Stock Warning At</label>
                 <input
                   type="number"
-                  className="input-control"
+                  min="0"
+                  className="admin-input"
                   value={formData.minimumStockLevel}
-                  onChange={e => setFormData({ ...formData, minimumStockLevel: Number(e.target.value) })}
+                  onChange={(e) => setFormData({ ...formData, minimumStockLevel: Number(e.target.value) })}
                   required
                 />
+                <span className="admin-form-hint">You'll get a low-stock badge below this quantity</span>
               </div>
             </div>
           )}
 
-          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '24px' }}>
-            <button type="button" className="btn btn-secondary" onClick={() => setModalOpen(false)}>Cancel</button>
-            <button type="submit" className="btn btn-primary">{editingId ? 'Save Changes' : 'Create Product'}</button>
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '26px' }}>
+            <button type="button" className="admin-btn admin-btn-secondary" onClick={() => setModalOpen(false)} disabled={saving}>
+              Cancel
+            </button>
+            <button type="submit" className="admin-btn admin-btn-primary" disabled={saving}>
+              {saving && <Loader2 size={15} className="admin-spin" />}
+              {saving ? 'Saving…' : editingId ? 'Save Changes' : 'Create Product'}
+            </button>
           </div>
         </form>
       </Modal>
+
+      <ConfirmationDialog
+        isOpen={!!deactivateTarget}
+        title="Deactivate product?"
+        message={`"${deactivateTarget?.productName}" will be hidden from billing and inventory screens until reactivated. Existing bills and stock history are unaffected.`}
+        confirmLabel="Deactivate"
+        onConfirm={confirmDeactivate}
+        onCancel={() => setDeactivateTarget(null)}
+      />
     </div>
   );
 };

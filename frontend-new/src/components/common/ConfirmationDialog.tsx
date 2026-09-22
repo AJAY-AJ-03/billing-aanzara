@@ -1,3 +1,4 @@
+// src/components/common/ConfirmationDialog.tsx
 import React from 'react';
 import Modal from './Modal';
 
@@ -16,14 +17,20 @@ export const ConfirmationDialog: React.FC<ConfirmationDialogProps> = ({
   message,
   confirmLabel = 'Confirm',
   onConfirm,
-  onCancel
+  onCancel,
 }) => {
   return (
     <Modal isOpen={isOpen} title={title} onClose={onCancel}>
-      <p style={{ color: 'var(--text-muted)', marginBottom: '24px' }}>{message}</p>
-      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px' }}>
-        <button className="btn btn-secondary" onClick={onCancel}>Cancel</button>
-        <button className="btn btn-danger" onClick={onConfirm}>{confirmLabel}</button>
+      <p style={{ color: 'var(--admin-text-muted)', fontSize: '13.5px', marginBottom: '22px', lineHeight: 1.5 }}>
+        {message}
+      </p>
+      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
+        <button type="button" className="admin-btn admin-btn-secondary" onClick={onCancel}>
+          Cancel
+        </button>
+        <button type="button" className="admin-btn admin-btn-danger" onClick={onConfirm}>
+          {confirmLabel}
+        </button>
       </div>
     </Modal>
   );

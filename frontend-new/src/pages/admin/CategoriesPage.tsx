@@ -1,10 +1,14 @@
+// src/pages/admin/CategoriesPage.tsx
 import React, { useEffect, useState } from 'react';
 import api from '../../services/ipcApi';
 import type { CategoryDto } from '../../../../shared/types/ipc';
 import { useToast } from '../../context/ToastContext';
 import Modal from '../../components/common/Modal';
 import Pagination from '../../components/common/Pagination';
-import { Plus, Search, Edit2, ToggleLeft, ToggleRight } from 'lucide-react';
+import ConfirmationDialog from '../../components/common/ConfirmationDialog';
+import { Plus, Search, X, Edit2, ToggleLeft, ToggleRight, FolderOpen, Loader2 } from 'lucide-react';
+
+const PAGE_SIZE = 8;
 
 export const CategoriesPage: React.FC = () => {
   const [categories, setCategories] = useState<CategoryDto[]>([]);
@@ -12,10 +16,15 @@ export const CategoriesPage: React.FC = () => {
   const [totalPages, setTotalPages] = useState(1);
   const [pageNumber, setPageNumber] = useState(1);
   const [search, setSearch] = useState('');
+  const [loading, setLoading] = useState(false);
+
   const [modalOpen, setModalOpen] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
+  const [saving, setSaving] = useState(false);
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
+
+  const [deactivateTarget, setDeactivateTarget] = useState<CategoryDto | null>(null);
 
   const { showToast } = useToast();
 
@@ -24,12 +33,14 @@ export const CategoriesPage: React.FC = () => {
   }, [pageNumber, search]);
 
   const loadCategories = async () => {
-    const res = await api.categories.getPaged({ pageNumber, pageSize: 8, search });
+    setLoading(true);
+    const res = await api.categories.getPaged({ pageNumber, pageSize: PAGE_SIZE, search });
     if (res.success && res.data) {
       setCategories(res.data.items);
       setTotalCount(res.data.totalCount);
       setTotalPages(res.data.totalPages || 1);
     }
+    setLoading(false);
   };
 
   const handleOpenModal = (c?: CategoryDto) => {
@@ -47,125 +58,231 @@ export const CategoriesPage: React.FC = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (editingId) {
-      const res = await api.categories.update(editingId, { name, description });
-      if (res.success) {
-        showToast('Category updated successfully', 'success');
-        setModalOpen(false);
-        loadCategories();
+    setSaving(true);
+    try {
+      if (editingId) {
+        const res = await api.categories.update(editingId, { name, description });
+        if (res.success) {
+          showToast('Category updated', 'success');
+          setModalOpen(false);
+          loadCategories();
+        } else {
+          showToast(res.message || 'Update failed', 'error');
+        }
       } else {
-        showToast(res.message || 'Update failed', 'error');
+        const res = await api.categories.create({ name, description });
+        if (res.success) {
+          showToast('Category created', 'success');
+          setModalOpen(false);
+          loadCategories();
+        } else {
+          showToast(res.message || 'Creation failed', 'error');
+        }
       }
-    } else {
-      const res = await api.categories.create({ name, description });
-      if (res.success) {
-        showToast('Category created successfully', 'success');
-        setModalOpen(false);
-        loadCategories();
-      } else {
-        showToast(res.message || 'Creation failed', 'error');
-      }
+    } finally {
+      setSaving(false);
     }
   };
 
-  const handleToggle = async (id: number) => {
-    const res = await api.categories.toggle(id);
+  const handleToggle = async (c: CategoryDto) => {
+    if (c.isActive) {
+      setDeactivateTarget(c);
+      return;
+    }
+    const res = await api.categories.toggle(c.id);
     if (res.success) {
-      showToast('Category status updated', 'info');
+      showToast(`${c.name} reactivated`, 'success');
       loadCategories();
     }
   };
 
+  const confirmDeactivate = async () => {
+    if (!deactivateTarget) return;
+    const res = await api.categories.toggle(deactivateTarget.id);
+    if (res.success) {
+      showToast(`${deactivateTarget.name} deactivated`, 'info');
+      loadCategories();
+    }
+    setDeactivateTarget(null);
+  };
+
+  const hasProducts = (deactivateTarget?.productCount || 0) > 0;
+
   return (
     <div>
-      <div className="card">
-        <div className="card-title">
-          <span>Categories ({totalCount})</span>
-          <button className="btn btn-primary" onClick={() => handleOpenModal()}>
-            <Plus size={16} />
-            <span>Add Category</span>
-          </button>
+      <div className="admin-card">
+        <div className="admin-toolbar">
+          <div className="admin-toolbar-title">
+            <h2>Categories</h2>
+            <span>{totalCount} total</span>
+          </div>
+          <div className="admin-toolbar-actions">
+            <button type="button" className="admin-btn admin-btn-primary" onClick={() => handleOpenModal()}>
+              <Plus size={16} />
+              <span>Add Category</span>
+            </button>
+          </div>
         </div>
 
-        <div style={{ marginBottom: '20px', position: 'relative', maxWidth: '360px' }}>
-          <Search size={18} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-dim)' }} />
+        <div className="admin-input-wrap" style={{ maxWidth: '360px', marginBottom: '18px' }}>
+          <span className="admin-input-wrap-icon">
+            <Search size={16} />
+          </span>
           <input
             type="text"
-            className="input-control"
-            style={{ paddingLeft: '40px' }}
-            placeholder="Search Category Name..."
+            className="admin-input"
+            placeholder="Search category name…"
             value={search}
-            onChange={e => { setSearch(e.target.value); setPageNumber(1); }}
+            onChange={(e) => {
+              setSearch(e.target.value);
+              setPageNumber(1);
+            }}
           />
+          {search && (
+            <button type="button" className="admin-input-clear" onClick={() => setSearch('')} aria-label="Clear search">
+              <X size={14} />
+            </button>
+          )}
         </div>
 
-        <div className="table-container">
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th>Category Name</th>
-                <th>Description</th>
-                <th>Product Count</th>
-                <th>Status</th>
-                <th style={{ textAlign: 'right' }}>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {categories.map(c => (
-                <tr key={c.id}>
-                  <td><strong>{c.name}</strong></td>
-                  <td>{c.description || '—'}</td>
-                  <td><span className="badge badge-info">{c.productCount || 0} products</span></td>
-                  <td>
-                    <span className={`badge ${c.isActive ? 'badge-success' : 'badge-danger'}`}>
-                      {c.isActive ? 'Active' : 'Inactive'}
-                    </span>
-                  </td>
-                  <td style={{ textAlign: 'right' }}>
-                    <button className="btn btn-secondary" style={{ padding: '6px 10px', marginRight: '6px' }} onClick={() => handleOpenModal(c)}>
+        <table className="admin-table">
+          <thead>
+            <tr>
+              <th>Category</th>
+              <th>Description</th>
+              <th className="num">Products</th>
+              <th>Status</th>
+              <th className="num">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {categories.map((c) => (
+              <tr key={c.id}>
+                <td className="admin-cell-primary">{c.name}</td>
+                <td style={{ color: 'var(--admin-text-muted)', fontSize: '13px' }}>
+                  {c.description || <span style={{ color: 'var(--admin-text-faint)' }}>No description</span>}
+                </td>
+                <td className="num">
+                  <span className="admin-badge admin-badge-neutral">{c.productCount || 0}</span>
+                </td>
+                <td>
+                  <span className={`admin-badge ${c.isActive ? 'admin-badge-success' : 'admin-badge-neutral'}`}>
+                    {c.isActive ? 'Active' : 'Inactive'}
+                  </span>
+                </td>
+                <td>
+                  <div className="admin-cell-actions">
+                    <button
+                      type="button"
+                      className="admin-btn admin-btn-secondary admin-btn-icon"
+                      onClick={() => handleOpenModal(c)}
+                      title="Edit category"
+                    >
                       <Edit2 size={14} />
                     </button>
-                    <button className="btn btn-secondary" style={{ padding: '6px 10px' }} onClick={() => handleToggle(c.id)}>
-                      {c.isActive ? <ToggleRight size={16} style={{ color: 'var(--accent-success)' }} /> : <ToggleLeft size={16} style={{ color: 'var(--text-muted)' }} />}
+                    <button
+                      type="button"
+                      className="admin-btn admin-btn-secondary admin-btn-icon"
+                      onClick={() => handleToggle(c)}
+                      title={c.isActive ? 'Deactivate category' : 'Reactivate category'}
+                    >
+                      {c.isActive ? (
+                        <ToggleRight size={16} style={{ color: 'var(--admin-accent)' }} />
+                      ) : (
+                        <ToggleLeft size={16} style={{ color: 'var(--admin-text-faint)' }} />
+                      )}
                     </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
 
-        <Pagination pageNumber={pageNumber} totalPages={totalPages} onPageChange={setPageNumber} />
+        {!loading && categories.length === 0 && (
+          <div className="admin-empty-block">
+            <div className="admin-empty-icon">
+              <FolderOpen size={20} />
+            </div>
+            <div className="admin-empty-title">
+              {search ? 'No categories match your search' : 'No categories yet'}
+            </div>
+            <div className="admin-empty-desc">
+              {search ? (
+                <>
+                  Try a different name, or{' '}
+                  <button
+                    type="button"
+                    onClick={() => setSearch('')}
+                    style={{ color: 'var(--admin-accent)', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 600, padding: 0 }}
+                  >
+                    clear the search
+                  </button>
+                  .
+                </>
+              ) : (
+                'Add a category to start organizing your products.'
+              )}
+            </div>
+          </div>
+        )}
+
+        <Pagination
+          pageNumber={pageNumber}
+          totalPages={totalPages}
+          onPageChange={setPageNumber}
+          totalCount={totalCount}
+          pageSize={PAGE_SIZE}
+        />
       </div>
 
       <Modal isOpen={modalOpen} title={editingId ? 'Edit Category' : 'Add Category'} onClose={() => setModalOpen(false)}>
         <form onSubmit={handleSubmit}>
-          <div className="form-group">
-            <label className="form-label">Category Name</label>
+          <div className="admin-field">
+            <label className="admin-label">Category Name</label>
             <input
               type="text"
-              className="input-control"
+              className="admin-input"
               value={name}
-              onChange={e => setName(e.target.value)}
+              onChange={(e) => setName(e.target.value)}
               required
+              autoFocus
             />
           </div>
-          <div className="form-group">
-            <label className="form-label">Description</label>
+          <div className="admin-field" style={{ marginTop: '16px' }}>
+            <label className="admin-label">Description <span className="optional">(optional)</span></label>
             <textarea
-              className="input-control"
+              className="admin-textarea"
               rows={3}
               value={description}
-              onChange={e => setDescription(e.target.value)}
-              placeholder="Description (optional)"
+              onChange={(e) => setDescription(e.target.value)}
+              placeholder="What kind of products belong here"
             />
           </div>
-          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '24px' }}>
-            <button type="button" className="btn btn-secondary" onClick={() => setModalOpen(false)}>Cancel</button>
-            <button type="submit" className="btn btn-primary">{editingId ? 'Save Changes' : 'Create Category'}</button>
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '24px' }}>
+            <button type="button" className="admin-btn admin-btn-secondary" onClick={() => setModalOpen(false)} disabled={saving}>
+              Cancel
+            </button>
+            <button type="submit" className="admin-btn admin-btn-primary" disabled={saving}>
+              {saving && <Loader2 size={15} className="admin-spin" />}
+              {saving ? 'Saving…' : editingId ? 'Save Changes' : 'Create Category'}
+            </button>
           </div>
         </form>
       </Modal>
+
+      <ConfirmationDialog
+        isOpen={!!deactivateTarget}
+        title="Deactivate category?"
+        message={
+          hasProducts
+            ? `"${deactivateTarget?.name}" still has ${deactivateTarget?.productCount} product(s) assigned. They'll keep this category but it won't be selectable for new products until reactivated.`
+            : `"${deactivateTarget?.name}" will be hidden from category pickers until reactivated.`
+        }
+        confirmLabel="Deactivate"
+        onConfirm={confirmDeactivate}
+        onCancel={() => setDeactivateTarget(null)}
+      />
     </div>
   );
 };
