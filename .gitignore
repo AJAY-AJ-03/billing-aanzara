@@ -1,0 +1,49 @@
+# Dependencies
+node_modules/
+frontend-new/node_modules/
+.pnp
+.pnp.js
+
+# Build and Production Outputs
+dist/
+dist-backend/
+dist-electron/
+frontend-new/dist/
+
+# SQLite Database & Data Storage
+database-data/
+*.db
+*.db-journal
+*.sqlite
+*.sqlite-journal
+
+# Environment & Secret Files
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Logs and Debug outputs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+logs/
+
+# IDE & Editor Directories
+.idea/
+.vscode/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+.vs/
+
+# OS Generated Files
+.DS_Store
+Thumbs.db
+
+# Legacy C# .NET & Angular Projects
+aanazara-billing-backend/
+aanzara-billing-frontend/

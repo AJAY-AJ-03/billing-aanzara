@@ -1,0 +1,30 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "CommonJS",
+    "moduleResolution": "node",
+    "lib": ["ES2022"],
+    "outDir": "./dist-backend",
+    "rootDir": "./",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "baseUrl": ".",
+    "paths": {
+      "@shared/*": ["shared/*"],
+      "@backend/*": ["backend-new/*"],
+      "@database/*": ["database/*"]
+    }
+  },
+  "include": [
+    "electron/**/*",
+    "backend-new/**/*",
+    "shared/**/*",
+    "database/**/*"
+  ],
+  "exclude": [
+    "node_modules",
+    "frontend-new"
+  ]
+}
