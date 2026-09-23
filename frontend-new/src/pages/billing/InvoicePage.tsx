@@ -5,6 +5,8 @@ import type { InvoiceDto } from '../../../../shared/types/ipc';
 import { useToast } from '../../context/ToastContext';
 import { useAuth } from '../../context/AuthContext';
 import { Printer, Download, ArrowLeft, Edit, Trash2, X, Check } from 'lucide-react';
+import logoImg from '../../assets/Logo.jpeg';
+import qrImg from '../../assets/qr.png';
 
 export const InvoicePage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
@@ -271,12 +273,16 @@ export const InvoicePage: React.FC = () => {
       <div className="card" style={{ background: '#ffffff', color: '#0f172a', padding: '30px', borderRadius: '8px', border: '1px solid #cbd5e1' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
           <tbody>
-            {/* Header Title */}
-            <tr>
-              <td colSpan={7} style={{ border: '2px solid #000', padding: '8px', textAlign: 'center', fontWeight: 800, fontSize: '16px' }}>
-                AANZARA FMCG - INVOICE
-              </td>
-            </tr>
+                  <tr>
+        <td colSpan={7} style={{ border: '2px solid #000', padding: '8px', textAlign: 'center', fontWeight: 800, fontSize: '16px', position: 'relative' }}>
+          <img
+            src={logoImg}
+            alt="Aanzara Logo"
+            style={{ height: '28px', width: '28px', objectFit: 'contain', position: 'absolute', left: '8px', top: '50%', transform: 'translateY(-50%)' }}
+          />
+          AANZARA FMCG - INVOICE
+        </td>
+      </tr>
 
             {/* Customer & Agent Info Row 1 */}
             <tr>
@@ -373,40 +379,40 @@ export const InvoicePage: React.FC = () => {
             </tr>
 
             {/* Terms & Conditions + QR Box */}
-            <tr>
-              <td colSpan={5} style={{ border: '1px solid #000', padding: '10px', verticalAlign: 'top', fontSize: '10px', lineHeight: '1.4' }}>
-                <strong style={{ fontSize: '11px' }}>Terms & Conditions</strong><br />
-                1. Subscription தொகை எந்த நிலையிலும் refund செய்யப்படாது.<br />
-                2. Stock order-க்கு செலுத்திய தொகை மட்டும் booking close ஆகும் முன் cancellation request கொடுத்தால் refund செய்யப்படும். Booking once confirm ஆகி close செய்யப்பட்ட பிறகு, அந்த amount எந்த சூழலிலும் refund செய்யப்படாது.<br />
-                3. Only stock order amount மட்டுமே refund செய்யப்படும், subscription amount-க்கு refund கிடையாது.<br />
-                4. Product குறித்து dissatisfaction இருந்தாலோ அல்லது product movement ஆதாரம் இருந்தாலோ, அந்த product-ஐ return எடுத்து replacement வழங்கப்படும்.<br />
-                5. Product expiry ஆகும் முன் முன்கூட்டியே தகவல் வழங்குவது கட்டாயம். (குறைந்தது 60 நாட்களுக்கு முன்).
-              </td>
-              <td colSpan={2} style={{ border: '1px solid #000', padding: '10px', textAlign: 'center', verticalAlign: 'middle' }}>
-                <div style={{ border: '1px solid #000', width: '70px', height: '70px', margin: '0 auto 6px auto', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: '14px' }}>
-                  QR
-                </div>
-                <div style={{ fontSize: '10px', fontWeight: 700 }}>AANZARA FMCG</div>
-                <div style={{ fontSize: '10px' }}>Total: Rs.{invoice.grandTotal.toFixed(1)}</div>
-                <div style={{ fontSize: '9px', color: '#64748b' }}>{invoice.invoiceNumber}</div>
-                {upiUrl && (
-                  <div style={{ fontSize: '8px', color: '#64748b', wordBreak: 'break-all', marginTop: '4px' }}>
-                    UPI: {upiUrl}
-                  </div>
-                )}
-                {isAdmin && invoice.paymentMethod === 'UPI' && invoice.paymentStatus === 'Pending' && (
-                  <button
-                    className="btn btn-secondary"
-                    style={{ marginTop: '8px', fontSize: '11px', padding: '4px 8px' }}
-                    disabled={verifyingPayment}
-                    onClick={handleVerifyPayment}
-                  >
-                    {verifyingPayment ? 'Verifying…' : 'Mark as Paid'}
-                  </button>
-                )}
-              </td>
-            </tr>
-
+<tr>
+  <td colSpan={5} style={{ border: '1px solid #000', padding: '10px', verticalAlign: 'top', fontSize: '10px', lineHeight: '1.4' }}>
+    <strong style={{ fontSize: '11px' }}>Terms & Conditions</strong><br />
+    1. Subscription தொகை எந்த நிலையிலும் refund செய்யப்படாது.<br />
+    2. Stock order-க்கு செலுத்திய தொகை மட்டும் booking close ஆகும் முன் cancellation request கொடுத்தால் refund செய்யப்படும். Booking once confirm ஆகி close செய்யப்பட்ட பிறகு, அந்த amount எந்த சூழலிலும் refund செய்யப்படாது.<br />
+    3. Only stock order amount மட்டுமே refund செய்யப்படும், subscription amount-க்கு refund கிடையாது.<br />
+    4. Product குறித்து dissatisfaction இருந்தாலோ அல்லது product movement ஆதாரம் இருந்தாலோ, அந்த product-ஐ return எடுத்து replacement வழங்கப்படும்.<br />
+    5. Product expiry ஆகும் முன் முன்கூட்டியே தகவல் வழங்குவது கட்டாயம். (குறைந்தது 60 நாட்களுக்கு முன்).
+  </td>
+  <td colSpan={2} style={{ border: '1px solid #000', padding: '10px', textAlign: 'center', verticalAlign: 'middle' }}>
+    {/* ⬇️ this block replaced — was the "QR" text placeholder */}
+    <div style={{ border: '1px solid #000', width: '70px', height: '70px', margin: '0 auto 6px auto', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
+      <img src={qrImg} alt="Payment QR" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+    </div>
+    <div style={{ fontSize: '10px', fontWeight: 700 }}>AANZARA FMCG</div>
+    <div style={{ fontSize: '10px' }}>Total: Rs.{invoice.grandTotal.toFixed(1)}</div>
+    <div style={{ fontSize: '9px', color: '#64748b' }}>{invoice.invoiceNumber}</div>
+    {upiUrl && (
+      <div style={{ fontSize: '8px', color: '#64748b', wordBreak: 'break-all', marginTop: '4px' }}>
+        UPI: {upiUrl}
+      </div>
+    )}
+    {isAdmin && invoice.paymentMethod === 'UPI' && invoice.paymentStatus === 'Pending' && (
+      <button
+        className="btn btn-secondary"
+        style={{ marginTop: '8px', fontSize: '11px', padding: '4px 8px' }}
+        disabled={verifyingPayment}
+        onClick={handleVerifyPayment}
+      >
+        {verifyingPayment ? 'Verifying…' : 'Mark as Paid'}
+      </button>
+    )}
+  </td>
+</tr>
             {/* Signature Blocks */}
             <tr>
               <td colSpan={4} style={{ border: '1px solid #000', padding: '16px 8px 6px 8px', fontWeight: 700, verticalAlign: 'bottom' }}>

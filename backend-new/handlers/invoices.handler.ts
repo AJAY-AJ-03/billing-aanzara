@@ -1,6 +1,7 @@
 import getPrismaClient from '../../database/db';
 import { ApiResponse, InvoiceDto } from '../../shared/types/ipc';
 import PDFDocument from 'pdfkit';
+import { resolveAssetPath, assetExists } from '../utils/assetPath';
 
 export async function getInvoiceByIdHandler(saleId: number): Promise<ApiResponse<InvoiceDto>> {
   try {
@@ -87,10 +88,14 @@ export async function generateInvoicePdfHandler(saleId: number): Promise<ApiResp
     const width = 559.28;
     let y = 18;
 
-    // Title Banner
-    doc.rect(left, y, width, 24).lineWidth(1.5).stroke('#000000');
-    doc.font('Helvetica-Bold').fontSize(11).fillColor('#000000').text('AANZARA FMCG - INVOICE', left, y + 6, { width, align: 'center' });
-    y += 28;
+    // Title Banner (with logo, matching the original Angular invoice layout)
+    const bannerH = 34;
+    doc.rect(left, y, width, bannerH).lineWidth(1.5).stroke('#000000');
+    if (assetExists('Logo.jpeg')) {
+      doc.image(resolveAssetPath('Logo.jpeg'), left + 4, y + 3, { width: bannerH - 6, height: bannerH - 6 });
+    }
+    doc.font('Helvetica-Bold').fontSize(11).fillColor('#000000').text('AANZARA FMCG - INVOICE', left, y + (bannerH - 11) / 2, { width, align: 'center' });
+    y += bannerH + 4;
 
     // Customer & Agent Header Table (4 columns)
     const colW1 = 110, colW2 = 170, colW3 = 110, colW4 = 169.28;
@@ -231,13 +236,20 @@ export async function generateInvoicePdfHandler(saleId: number): Promise<ApiResp
 
     // QR Box
     doc.rect(left + termsW, y, qrW, 110).stroke('#000000');
-    doc.rect(left + termsW + 40, y + 10, 60, 45).stroke('#000000');
-    doc.font('Helvetica-Bold').fontSize(8).text('QR', left + termsW + 40, y + 25, { width: 60, align: 'center' });
+    const qrBoxSize = 55;
+    const qrBoxX = left + termsW + (qrW - qrBoxSize) / 2;
+    const qrBoxY = y + 8;
+    doc.rect(qrBoxX, qrBoxY, qrBoxSize, qrBoxSize).stroke('#000000');
+    if (assetExists('qr.png')) {
+      doc.image(resolveAssetPath('qr.png'), qrBoxX + 1, qrBoxY + 1, { width: qrBoxSize - 2, height: qrBoxSize - 2 });
+    } else {
+      doc.font('Helvetica-Bold').fontSize(8).text('QR', qrBoxX, qrBoxY + qrBoxSize / 2 - 4, { width: qrBoxSize, align: 'center' });
+    }
 
-    doc.font('Helvetica').fontSize(5).text('Scan to Verify', left + termsW, y + 58, { width: qrW, align: 'center' });
-    doc.font('Helvetica-Bold').fontSize(6).text('AANZARA FMCG', left + termsW, y + 67, { width: qrW, align: 'center' });
-    doc.font('Helvetica').fontSize(5).text(`Total: Rs.${inv.grandTotal.toFixed(1)}`, left + termsW, y + 76, { width: qrW, align: 'center' });
-    doc.font('Helvetica').fontSize(5).text(inv.invoiceNumber, left + termsW, y + 85, { width: qrW, align: 'center' });
+    doc.font('Helvetica').fontSize(5).text('Scan to Verify', left + termsW, y + 66, { width: qrW, align: 'center' });
+    doc.font('Helvetica-Bold').fontSize(6).text('AANZARA FMCG', left + termsW, y + 74, { width: qrW, align: 'center' });
+    doc.font('Helvetica').fontSize(5).text(`Total: Rs.${inv.grandTotal.toFixed(1)}`, left + termsW, y + 83, { width: qrW, align: 'center' });
+    doc.font('Helvetica').fontSize(5).text(inv.invoiceNumber, left + termsW, y + 92, { width: qrW, align: 'center' });
 
     y += 114;
 
