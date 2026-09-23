@@ -34,6 +34,8 @@ export const InvoicePage: React.FC = () => {
   const [editItems, setEditItems] = useState<any[]>([]);
   const [submittingEdit, setSubmittingEdit] = useState(false);
   const [submittingDelete, setSubmittingDelete] = useState(false);
+  const [upiUrl, setUpiUrl] = useState('');
+  const [verifyingPayment, setVerifyingPayment] = useState(false);
 
   useEffect(() => {
     if (id) {
@@ -61,10 +63,37 @@ export const InvoicePage: React.FC = () => {
       setEditItems(
         res.data.items ? res.data.items.map((it: any) => ({ ...it, saleItemId: it.id })) : []
       );
+
+      if (res.data.paymentMethod === 'UPI') {
+        const qr = await api.payments.upiQr('merchant@upi', 'Aanzara FMCG', res.data.grandTotal);
+        if (qr.success && qr.data) setUpiUrl(qr.data.upiUrl);
+      } else {
+        setUpiUrl('');
+      }
     } else {
       showToast(res.message || 'Invoice not found', 'error');
     }
     setLoading(false);
+  };
+
+  const handleVerifyPayment = async () => {
+    if (!invoice?.paymentId) {
+      showToast('No payment record found for this invoice', 'error');
+      return;
+    }
+    setVerifyingPayment(true);
+    const res = await api.payments.verify({
+      paymentId: invoice.paymentId,
+      providerReference: `manual-${Date.now()}`,
+      status: 'Success'
+    });
+    if (res.success) {
+      showToast('Payment marked as paid', 'success');
+      if (id) await loadInvoice(Number(id));
+    } else {
+      showToast(res.message || 'Failed to verify payment', 'error');
+    }
+    setVerifyingPayment(false);
   };
 
   const handlePrint = async () => {
@@ -360,6 +389,21 @@ export const InvoicePage: React.FC = () => {
                 <div style={{ fontSize: '10px', fontWeight: 700 }}>AANZARA FMCG</div>
                 <div style={{ fontSize: '10px' }}>Total: Rs.{invoice.grandTotal.toFixed(1)}</div>
                 <div style={{ fontSize: '9px', color: '#64748b' }}>{invoice.invoiceNumber}</div>
+                {upiUrl && (
+                  <div style={{ fontSize: '8px', color: '#64748b', wordBreak: 'break-all', marginTop: '4px' }}>
+                    UPI: {upiUrl}
+                  </div>
+                )}
+                {isAdmin && invoice.paymentMethod === 'UPI' && invoice.paymentStatus === 'Pending' && (
+                  <button
+                    className="btn btn-secondary"
+                    style={{ marginTop: '8px', fontSize: '11px', padding: '4px 8px' }}
+                    disabled={verifyingPayment}
+                    onClick={handleVerifyPayment}
+                  >
+                    {verifyingPayment ? 'Verifying…' : 'Mark as Paid'}
+                  </button>
+                )}
               </td>
             </tr>
 

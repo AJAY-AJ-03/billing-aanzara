@@ -33,7 +33,10 @@ import type {
   BillingItemRequestDto,
   BillingCalculationDto,
   CreateBillRequestDto,
-  BillResponseDto
+  BillResponseDto,
+  PaymentDto,
+  CreatePaymentDto,
+  VerifyPaymentDto
 } from '../../../shared/types/ipc';
 
 declare global {
@@ -346,6 +349,23 @@ export const api = {
     generatePdf: async (id: number): Promise<ApiResponse<string>> => {
       const electronApi = getApi();
       if (electronApi) return handleResponse(electronApi.invoices.generatePdf(id));
+      return { success: false, message: 'IPC bridge unavailable' };
+    }
+  },
+  payments: {
+    create: async (dto: CreatePaymentDto): Promise<ApiResponse<PaymentDto>> => {
+      const electronApi = getApi();
+      if (electronApi) return handleResponse(electronApi.payments.create(dto));
+      return { success: false, message: 'IPC bridge unavailable' };
+    },
+    verify: async (dto: VerifyPaymentDto): Promise<ApiResponse<PaymentDto>> => {
+      const electronApi = getApi();
+      if (electronApi) return handleResponse(electronApi.payments.verify(dto));
+      return { success: false, message: 'IPC bridge unavailable' };
+    },
+    upiQr: async (upiId: string, merchantName: string, amount: number): Promise<ApiResponse<{ upiUrl: string }>> => {
+      const electronApi = getApi();
+      if (electronApi) return handleResponse(electronApi.payments.upiQr(upiId, merchantName, amount));
       return { success: false, message: 'IPC bridge unavailable' };
     }
   },

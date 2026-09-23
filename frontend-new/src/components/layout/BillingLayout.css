@@ -1,0 +1,338 @@
+/* src/components/layout/BillingLayout.css
+   POS shell that mirrors AdminLayout's structure and tokens.
+   Import once in BillingLayout.tsx. */
+
+.billing-shell {
+  /* Design tokens — identical to AdminLayout so both shells look unified.
+     If AdminLayout later moves these to :root, delete this block. */
+  --admin-ink: #0e1526;
+  --admin-ink-soft: #171f33;
+  --admin-ink-border: rgba(255, 255, 255, 0.07);
+  --admin-paper: #f5f6f8;
+  --admin-surface: #ffffff;
+  --admin-border: #e3e6ec;
+  --admin-text: #131826;
+  --admin-text-muted: #6b7280;
+  --admin-text-faint: #9aa1af;
+  --admin-accent: #0f6d4f;
+  --admin-accent-soft: rgba(15, 109, 79, 0.08);
+  --admin-gold: #b8893b;
+  --admin-danger: #b3261e;
+  --admin-radius: 10px;
+  --billing-sidebar-w: 260px;
+  --billing-sidebar-w-collapsed: 76px;
+
+  display: flex;
+  min-height: 100vh;
+  background: var(--admin-paper);
+  color: var(--admin-text);
+  font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+}
+
+/* ---------- Sidebar ---------- */
+
+.billing-sidebar {
+  width: var(--billing-sidebar-w);
+  background: var(--admin-ink);
+  border-right: 1px solid rgba(0, 0, 0, 0.2);
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  transition: width 0.18s ease;
+}
+
+.billing-shell.is-collapsed .billing-sidebar {
+  width: var(--billing-sidebar-w-collapsed);
+}
+
+.billing-brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 20px 18px;
+  border-bottom: 1px solid var(--admin-ink-border);
+  position: relative;
+}
+
+.billing-brand-mark {
+  width: 34px;
+  height: 34px;
+  flex-shrink: 0;
+  border: 1px solid var(--admin-gold);
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--admin-gold);
+}
+
+.billing-brand-text {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.2;
+  overflow: hidden;
+}
+
+.billing-brand-name {
+  font-size: 15px;
+  font-weight: 700;
+  color: #f5f6f8;
+}
+
+.billing-brand-sub {
+  font-size: 11.5px;
+  color: var(--admin-text-faint);
+  margin-top: 2px;
+}
+
+.billing-collapse-btn {
+  margin-left: auto;
+  width: 26px;
+  height: 26px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: 1px solid var(--admin-ink-border);
+  border-radius: 6px;
+  color: var(--admin-text-faint);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.billing-collapse-btn:hover {
+  color: #fff;
+  border-color: rgba(255, 255, 255, 0.2);
+}
+.billing-shell.is-collapsed .billing-brand {
+  justify-content: center;
+  padding: 20px 10px;
+}
+.billing-shell.is-collapsed .billing-collapse-btn {
+  margin-left: 0;
+  position: absolute;
+  right: -12px;
+  top: 24px;
+  background: var(--admin-ink);
+}
+
+.billing-nav {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.billing-nav-group-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--admin-text-faint);
+  padding: 0 10px 6px;
+  letter-spacing: 0.02em;
+}
+
+.billing-nav-link {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 9px 10px;
+  border-radius: 7px;
+  color: #b7bdcc;
+  text-decoration: none;
+  font-size: 13.5px;
+  font-weight: 500;
+  border-left: 3px solid transparent;
+  margin-bottom: 2px;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+.billing-shell.is-collapsed .billing-nav-link {
+  justify-content: center;
+  padding: 10px;
+}
+.billing-nav-link:hover {
+  background: var(--admin-ink-soft);
+  color: #ffffff;
+}
+.billing-nav-link.is-active {
+  background: rgba(15, 109, 79, 0.16);
+  color: #ffffff;
+  border-left-color: var(--admin-gold);
+}
+
+/* Admin portal link gets a gold-tinted treatment */
+.billing-nav-link.is-admin {
+  color: var(--admin-gold);
+}
+.billing-nav-link.is-admin:hover {
+  background: rgba(184, 137, 59, 0.12);
+  color: #ffd98a;
+}
+
+.billing-sidebar-footer {
+  padding: 14px 18px;
+  border-top: 1px solid var(--admin-ink-border);
+}
+.billing-version {
+  font-size: 11px;
+  color: var(--admin-text-faint);
+}
+
+/* ---------- Main / Header ---------- */
+
+.billing-main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.billing-header {
+  height: 64px;
+  padding: 0 28px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: var(--admin-surface);
+  border-bottom: 1px solid var(--admin-border);
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+.billing-breadcrumb {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 15px;
+}
+.billing-breadcrumb-root {
+  color: var(--admin-text-muted);
+  font-weight: 500;
+}
+.billing-breadcrumb-sep {
+  color: var(--admin-text-faint);
+}
+.billing-breadcrumb-current {
+  font-weight: 700;
+  color: var(--admin-text);
+}
+
+.billing-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.billing-icon-btn {
+  position: relative;
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: 1px solid var(--admin-border);
+  border-radius: 8px;
+  color: var(--admin-text-muted);
+  cursor: pointer;
+}
+.billing-icon-btn:hover {
+  background: var(--admin-paper);
+  color: var(--admin-text);
+}
+
+.billing-user-menu {
+  position: relative;
+}
+.billing-user-trigger {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: transparent;
+  border: 1px solid transparent;
+  padding: 5px 8px 5px 5px;
+  border-radius: 9px;
+  cursor: pointer;
+}
+.billing-user-trigger:hover {
+  background: var(--admin-paper);
+  border-color: var(--admin-border);
+}
+.billing-avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: var(--admin-ink);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 13px;
+  border: 2px solid var(--admin-gold);
+}
+.billing-user-text {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.2;
+  text-align: left;
+}
+.billing-user-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--admin-text);
+}
+.billing-user-role {
+  font-size: 11px;
+  color: var(--admin-text-muted);
+}
+.billing-chevron {
+  color: var(--admin-text-faint);
+  transition: transform 0.15s ease;
+}
+.billing-chevron.is-open {
+  transform: rotate(180deg);
+}
+
+.billing-user-dropdown {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  width: 200px;
+  background: var(--admin-surface);
+  border: 1px solid var(--admin-border);
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(16, 24, 40, 0.12);
+  padding: 6px;
+  z-index: 20;
+}
+.billing-dropdown-item {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 10px;
+  background: transparent;
+  border: none;
+  border-radius: 7px;
+  font-size: 13px;
+  color: var(--admin-text);
+  cursor: pointer;
+  text-align: left;
+}
+.billing-dropdown-item:hover {
+  background: var(--admin-paper);
+}
+.billing-dropdown-item.is-danger {
+  color: var(--admin-danger);
+}
+.billing-dropdown-divider {
+  height: 1px;
+  background: var(--admin-border);
+  margin: 6px 2px;
+}
+
+.billing-page-body {
+  padding: 28px;
+}

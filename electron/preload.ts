@@ -63,6 +63,12 @@ contextBridge.exposeInMainWorld('api', {
     admin: () => ipcRenderer.invoke('dashboard:admin'),
     billing: (workerId?: number) => ipcRenderer.invoke('dashboard:billing', workerId)
   },
+  payments: {
+    create: (dto: any) => ipcRenderer.invoke('payments:create', dto),
+    verify: (dto: any) => ipcRenderer.invoke('payments:verify', dto),
+    upiQr: (upiId: string, merchantName: string, amount: number) =>
+      ipcRenderer.invoke('payments:upiQr', upiId, merchantName, amount)
+  },
   users: {
     getPaged: (req: any) => ipcRenderer.invoke('users:getPaged', req),
     getById: (id: number) => ipcRenderer.invoke('users:getById', id),

@@ -340,6 +340,7 @@ export interface InvoiceDto {
   grandTotal: number;
   paymentMethod: string;
   paymentStatus: string;
+  paymentId?: number | null;
   transactionId?: string | null;
   items: InvoiceItemDto[];
 }
@@ -361,11 +362,33 @@ export interface SaleListItemDto {
 
 export interface PaymentDto {
   id: number;
+  saleId: number;
   paymentMethod: string;
   amount: number;
   transactionId?: string | null;
+  providerReference?: string | null;
   status: string;
   paidAt?: string | null;
+  createdAt?: string;
+}
+
+export interface CreatePaymentDto {
+  saleId: number;
+  paymentMethod: string;
+  amount: number;
+  transactionId?: string | null;
+}
+
+export interface VerifyPaymentDto {
+  paymentId: number;
+  providerReference: string;
+  status: string; // Success, Failed, Cancelled
+}
+
+export interface UpiQrRequestDto {
+  upiId: string;
+  merchantName: string;
+  amount: number;
 }
 
 export interface UpdateSaleDto {

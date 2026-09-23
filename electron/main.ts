@@ -68,6 +68,11 @@ import {
   getInvoiceByNumberHandler,
   generateInvoicePdfHandler
 } from '../backend-new/handlers/invoices.handler';
+import {
+  createPaymentHandler,
+  verifyPaymentHandler,
+  generateUpiUrlHandler
+} from '../backend-new/handlers/payments.handler';
 
 let mainWindow: BrowserWindow | null = null;
 
@@ -198,6 +203,20 @@ function registerIpcHandlers() {
   // Dashboard
   ipcMain.handle('dashboard:admin', async (_) => getAdminDashboardHandler());
   ipcMain.handle('dashboard:billing', async (_, workerId) => getBillingDashboardHandler(workerId || currentSession?.id || 1));
+
+  // Payments
+  ipcMain.handle('payments:create', async (_, dto) => {
+    if (!currentSession) return { success: false, message: 'Unauthenticated: please log in' };
+    return createPaymentHandler(dto);
+  });
+  ipcMain.handle('payments:verify', async (_, dto) => {
+    if (!currentSession) return { success: false, message: 'Unauthenticated: please log in' };
+    return verifyPaymentHandler(dto);
+  });
+  ipcMain.handle('payments:upiQr', async (_, upiId, merchantName, amount) => {
+    if (!currentSession) return { success: false, message: 'Unauthenticated: please log in' };
+    return generateUpiUrlHandler(upiId, merchantName, amount);
+  });
 
   // Users
   ipcMain.handle('users:getPaged', async (_, req) => getPagedUsersHandler(req));
