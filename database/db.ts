@@ -47,6 +47,25 @@ export function getDatabasePath(): string {
   return dbPath;
 }
 
+export async function ensureSchemaUpToDate(): Promise<void> {
+  const prisma = getPrismaClient();
+
+  const hasColumn = async (table: string, column: string): Promise<boolean> => {
+    const cols: any[] = await prisma.$queryRawUnsafe(`PRAGMA table_info('${table}')`);
+    return cols.some(c => c.name === column);
+  };
+
+  if (!(await hasColumn('SaleItem', 'unitsPerBox'))) {
+    await prisma.$executeRawUnsafe(`ALTER TABLE "SaleItem" ADD COLUMN "unitsPerBox" REAL`);
+  }
+  if (!(await hasColumn('Sale', 'cancelledAt'))) {
+    await prisma.$executeRawUnsafe(`ALTER TABLE "Sale" ADD COLUMN "cancelledAt" DATETIME`);
+  }
+  await prisma.$executeRawUnsafe(
+    `CREATE TABLE IF NOT EXISTS "InvoiceCounter" ("year" INTEGER NOT NULL PRIMARY KEY, "lastNumber" INTEGER NOT NULL DEFAULT 0)`
+  );
+}
+
 export function getPrismaClient(): PrismaClient {
   if (!prisma) {
     const dbPath = getDatabasePath();

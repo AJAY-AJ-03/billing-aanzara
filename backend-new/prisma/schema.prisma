@@ -95,6 +95,11 @@ model Offer {
   @@index([productId])
 }
 
+model InvoiceCounter {
+  year       Int @id
+  lastNumber Int @default(0)
+}
+
 model Sale {
   id              Int        @id @default(autoincrement())
   invoiceNumber   String     @unique
@@ -118,6 +123,7 @@ model Sale {
   paymentMethod   String     @default("Cash")
   paymentStatus   String     @default("Pending")
   saleStatus      String     @default("Completed")
+  cancelledAt     DateTime?
   createdAt       DateTime   @default(now())
   saleItems       SaleItem[]
   payments        Payment[]
@@ -136,6 +142,7 @@ model SaleItem {
   sku           String?
   isCustom      Boolean  @default(false)
   unit          String?
+  unitsPerBox   Float?
   quantity      Float
   unitPrice     Float
   discount      Float

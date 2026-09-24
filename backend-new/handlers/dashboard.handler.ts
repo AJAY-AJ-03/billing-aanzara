@@ -5,6 +5,9 @@ import {
   BillingDashboardDto
 } from '../../shared/types/ipc';
 
+// Cancelled invoices are kept for the records but must not count in any totals.
+const NOT_CANCELLED = { saleStatus: { not: 'Cancelled' } };
+
 export async function getAdminDashboardHandler(): Promise<ApiResponse<AdminDashboardDto>> {
   try {
     const prisma = getPrismaClient();
@@ -21,26 +24,27 @@ export async function getAdminDashboardHandler(): Promise<ApiResponse<AdminDashb
     const endOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59);
 
     const todaySalesRecords = await prisma.sale.findMany({
-      where: { createdAt: { gte: startOfToday, lte: endOfToday } }
+      where: { ...NOT_CANCELLED, createdAt: { gte: startOfToday, lte: endOfToday } }
     });
     const todaySales = todaySalesRecords.reduce((acc, s) => acc + s.grandTotal, 0);
     const todayBills = todaySalesRecords.length;
 
     const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
     const monthSalesRecords = await prisma.sale.findMany({
-      where: { createdAt: { gte: startOfMonth } }
+      where: { ...NOT_CANCELLED, createdAt: { gte: startOfMonth } }
     });
     const thisMonthSales = monthSalesRecords.reduce((acc, s) => acc + s.grandTotal, 0);
     const thisMonthBills = monthSalesRecords.length;
 
-    const totalBills = await prisma.sale.count();
-    const allSales = await prisma.sale.findMany();
+    const totalBills = await prisma.sale.count({ where: NOT_CANCELLED });
+    const allSales = await prisma.sale.findMany({ where: NOT_CANCELLED });
     const gstCollected = allSales.reduce((acc, s) => acc + s.gstAmount, 0);
 
     // Monthly breakdown for current year
     const year = now.getFullYear();
     const yearSales = await prisma.sale.findMany({
       where: {
+        ...NOT_CANCELLED,
         createdAt: {
           gte: new Date(year, 0, 1),
           lte: new Date(year, 11, 31, 23, 59, 59)
@@ -62,7 +66,7 @@ export async function getAdminDashboardHandler(): Promise<ApiResponse<AdminDashb
 
     // Top products
     const saleItems = await prisma.saleItem.findMany({
-      where: { isCustom: false, productId: { not: null } }
+      where: { isCustom: false, productId: { not: null }, sale: NOT_CANCELLED }
     });
     const topProdMap: { [pid: number]: { productName: string; quantitySold: number; revenue: number } } = {};
     for (const item of saleItems) {
@@ -88,6 +92,7 @@ export async function getAdminDashboardHandler(): Promise<ApiResponse<AdminDashb
 
     // Worker performance
     const salesWithWorkers = await prisma.sale.findMany({
+      where: NOT_CANCELLED,
       include: { salesWorker: true }
     });
     const workerMap: { [uid: number]: { name: string; billsCount: number; totalSales: number } } = {};
@@ -158,6 +163,7 @@ export async function getBillingDashboardHandler(salesWorkerId: number): Promise
 
     const todaySalesRecords = await prisma.sale.findMany({
       where: {
+        ...NOT_CANCELLED,
         salesWorkerId,
         createdAt: { gte: startOfToday, lte: endOfToday }
       }
@@ -167,7 +173,7 @@ export async function getBillingDashboardHandler(salesWorkerId: number): Promise
     const todaySales = todaySalesRecords.reduce((acc, s) => acc + s.grandTotal, 0);
 
     const recentSales = await prisma.sale.findMany({
-      where: { salesWorkerId },
+      where: { ...NOT_CANCELLED, salesWorkerId },
       orderBy: { createdAt: 'desc' },
       take: 5
     });

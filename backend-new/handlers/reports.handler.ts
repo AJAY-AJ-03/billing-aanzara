@@ -8,6 +8,9 @@ import {
   SalesReportFilterDto
 } from '../../shared/types/ipc';
 
+// Cancelled invoices are kept for the records but must not count in any report.
+const NOT_CANCELLED = { saleStatus: { not: 'Cancelled' } };
+
 export async function getMonthlySalesHandler(year: number = new Date().getFullYear()): Promise<ApiResponse<MonthlySalesDto[]>> {
   try {
     const prisma = getPrismaClient();
@@ -16,6 +19,7 @@ export async function getMonthlySalesHandler(year: number = new Date().getFullYe
 
     const sales = await prisma.sale.findMany({
       where: {
+        ...NOT_CANCELLED,
         createdAt: { gte: startDate, lte: endDate }
       }
     });
@@ -59,6 +63,7 @@ export async function getDailySalesHandler(fromStr: string, toStr: string): Prom
 
     const sales = await prisma.sale.findMany({
       where: {
+        ...NOT_CANCELLED,
         createdAt: { gte: from, lte: to }
       },
       orderBy: { createdAt: 'asc' }
@@ -98,6 +103,7 @@ export async function getProductSalesHandler(fromStr: string, toStr: string): Pr
         isCustom: false,
         productId: { not: null },
         sale: {
+          ...NOT_CANCELLED,
           createdAt: { gte: from, lte: to }
         }
       }
@@ -133,7 +139,7 @@ export async function getProductSalesHandler(fromStr: string, toStr: string): Pr
 export async function exportSalesReportHandler(filter: SalesReportFilterDto): Promise<ApiResponse<string>> {
   try {
     const prisma = getPrismaClient();
-    const where: any = {};
+    const where: any = { ...NOT_CANCELLED };
 
     if (filter.fromDate) where.createdAt = { ...where.createdAt, gte: new Date(filter.fromDate) };
     if (filter.toDate) where.createdAt = { ...where.createdAt, lte: new Date(filter.toDate) };
@@ -195,6 +201,7 @@ export async function exportGstReportHandler(fromStr: string, toStr: string): Pr
 
     const sales = await prisma.sale.findMany({
       where: {
+        ...NOT_CANCELLED,
         createdAt: { gte: from, lte: to }
       },
       orderBy: { createdAt: 'asc' }

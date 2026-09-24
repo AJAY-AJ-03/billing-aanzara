@@ -388,6 +388,7 @@ export interface VerifyPaymentDto {
   paymentId: number;
   providerReference: string;
   status: string; // Success, Failed, Cancelled
+  amountReceived?: number | null; // optional: what the cashier actually received
 }
 
 export interface UpiQrRequestDto {

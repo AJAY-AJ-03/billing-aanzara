@@ -10,7 +10,8 @@ export const createPaymentSchema = z.object({
 export const verifyPaymentSchema = z.object({
   paymentId: z.number().int().positive('paymentId is required'),
   providerReference: z.string().min(1, 'Provider reference is required'),
-  status: z.enum(['Success', 'Failed', 'Cancelled'])
+  status: z.enum(['Success', 'Failed', 'Cancelled']),
+  amountReceived: z.number().positive('Amount received must be positive').optional().nullable()
 });
 
 export const upiQrRequestSchema = z.object({

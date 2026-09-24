@@ -203,7 +203,7 @@ export const InvoicePage: React.FC = () => {
     }
   };
 
-  // Admin Delete Action
+  // Admin Cancel Action (the invoice is kept; stock is restored)
   const handleDeleteSale = async () => {
     if (!id) return;
     setSubmittingDelete(true);
@@ -212,11 +212,11 @@ export const InvoicePage: React.FC = () => {
     setSubmittingDelete(false);
 
     if (res.success) {
-      showToast('Invoice deleted and stock reversed', 'success');
+      showToast('Invoice cancelled and stock restored', 'success');
       setShowDeleteModal(false);
-      navigate('/admin/sales');
+      loadInvoice(Number(id));
     } else {
-      showToast(res.message || 'Failed to delete invoice', 'error');
+      showToast(res.message || 'Failed to cancel invoice', 'error');
     }
   };
 
@@ -235,6 +235,9 @@ export const InvoicePage: React.FC = () => {
   if (loading) return <div style={{ padding: '40px', color: 'var(--text-muted)' }}>Loading Invoice...</div>;
   if (!invoice) return <div style={{ padding: '40px', color: 'var(--accent-danger)' }}>Invoice record not found.</div>;
 
+  // cancelSaleHandler sets paymentStatus to 'Cancelled'
+  const isCancelled = invoice.paymentStatus === 'Cancelled';
+
   return (
     <div style={{ maxWidth: '900px', margin: '0 auto', paddingBottom: '40px' }}>
       {/* Top Action Bar */}
@@ -245,7 +248,7 @@ export const InvoicePage: React.FC = () => {
         </button>
 
         <div style={{ display: 'flex', gap: '10px' }}>
-          {isAdmin && (
+          {isAdmin && !isCancelled && (
             <>
               <button className="btn btn-secondary" style={{ background: '#eab308', color: '#000', border: 'none' }} onClick={() => setShowEditModal(true)}>
                 <Edit size={16} />
@@ -253,7 +256,7 @@ export const InvoicePage: React.FC = () => {
               </button>
               <button className="btn btn-secondary" style={{ background: '#ef4444', color: '#fff', border: 'none' }} onClick={() => setShowDeleteModal(true)}>
                 <Trash2 size={16} />
-                <span>Delete</span>
+                <span>Cancel Invoice</span>
               </button>
             </>
           )}
@@ -273,6 +276,15 @@ export const InvoicePage: React.FC = () => {
       <div className="card" style={{ background: '#ffffff', color: '#0f172a', padding: '30px', borderRadius: '8px', border: '1px solid #cbd5e1' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
           <tbody>
+            {/* Cancelled banner (also shows when printed) */}
+            {isCancelled && (
+              <tr>
+                <td colSpan={7} style={{ border: '2px solid #b91c1c', padding: '8px', textAlign: 'center', fontWeight: 800, fontSize: '14px', color: '#b91c1c', background: '#fee2e2' }}>
+                  CANCELLED — THIS INVOICE IS NOT VALID
+                </td>
+              </tr>
+            )}
+
                   <tr>
         <td colSpan={7} style={{ border: '2px solid #000', padding: '8px', textAlign: 'center', fontWeight: 800, fontSize: '16px', position: 'relative' }}>
           <img
@@ -537,23 +549,23 @@ export const InvoicePage: React.FC = () => {
         </div>
       )}
 
-      {/* Admin Delete Modal (Item 2) */}
+      {/* Admin Cancel Modal (Item 2) */}
       {showDeleteModal && (
         <div className="modal-backdrop" onClick={() => setShowDeleteModal(false)}>
           <div className="modal-content" style={{ maxWidth: '440px' }} onClick={e => e.stopPropagation()}>
             <div className="modal-header">
-              <h3 style={{ color: 'var(--accent-danger)' }}>Delete Invoice?</h3>
+              <h3 style={{ color: 'var(--accent-danger)' }}>Cancel Invoice?</h3>
               <button onClick={() => setShowDeleteModal(false)} style={{ background: 'none', border: 'none', color: '#fff' }}><X size={20} /></button>
             </div>
             <div style={{ padding: '20px' }}>
               <p style={{ fontSize: '14px', color: 'var(--text-primary)' }}>
-                Are you sure you want to delete invoice <strong>#{invoice.invoiceNumber}</strong>?
-                Stock will be automatically reversed for all non-custom products. This action cannot be undone.
+                Are you sure you want to cancel invoice <strong>#{invoice.invoiceNumber}</strong>?
+                Stock will be restored for all non-custom products. The invoice is kept for your records and cannot be edited afterwards.
               </p>
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '24px' }}>
-                <button className="btn btn-secondary" onClick={() => setShowDeleteModal(false)}>Cancel</button>
+                <button className="btn btn-secondary" onClick={() => setShowDeleteModal(false)}>Keep Invoice</button>
                 <button className="btn btn-primary" style={{ background: '#ef4444', borderColor: '#ef4444' }} disabled={submittingDelete} onClick={handleDeleteSale}>
-                  <span>{submittingDelete ? 'Deleting...' : 'Confirm Delete'}</span>
+                  <span>{submittingDelete ? 'Cancelling...' : 'Confirm Cancel'}</span>
                 </button>
               </div>
             </div>

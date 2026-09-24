@@ -2,7 +2,7 @@ import { app, BrowserWindow, ipcMain, dialog } from 'electron';
 import path from 'path';
 import fs from 'fs';
 
-import { getPrismaClient } from '../database/db';
+import { getPrismaClient, ensureSchemaUpToDate  } from '../database/db';
 import { seedDatabase } from '../database/seed';
 
 import { calculateBillingHandler, createBillHandler, scanBarcodeHandler } from '../backend-new/handlers/billing.handler';
@@ -45,7 +45,7 @@ import {
   getSaleByIdHandler,
   getSaleByInvoiceHandler,
   updateSaleHandler,
-  deleteSaleHandler
+  cancelSaleHandler
 } from '../backend-new/handlers/sales.handler';
 import {
   getMonthlySalesHandler,
@@ -210,8 +210,7 @@ function registerIpcHandlers() {
   ipcMain.handle('sales:getById', async (_, id) => getSaleByIdHandler(id));
   ipcMain.handle('sales:getByInvoice', async (_, invNum) => getSaleByInvoiceHandler(invNum));
   ipcMain.handle('sales:update', async (_, id, dto) => updateSaleHandler(id, dto, currentSession));
-  ipcMain.handle('sales:delete', async (_, id) => deleteSaleHandler(id, currentSession));
-
+    ipcMain.handle('sales:delete', async (_, id) => cancelSaleHandler(id, currentSession));
   // Reports
   ipcMain.handle('reports:monthlySales', async (_, year) => getMonthlySalesHandler(year));
   ipcMain.handle('reports:dailySales', async (_, from, to) => getDailySalesHandler(from, to));
@@ -286,6 +285,7 @@ function registerIpcHandlers() {
 app.whenReady().then(async () => {
   try {
     getPrismaClient();
+    await ensureSchemaUpToDate();
     await seedDatabase();
   } catch (err) {
     console.error('Database setup error:', err);

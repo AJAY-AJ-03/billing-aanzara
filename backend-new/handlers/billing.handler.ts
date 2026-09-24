@@ -1,4 +1,5 @@
 import getPrismaClient from '../../database/db';
+import type { Prisma } from '@prisma/client';
 import {
   ApiResponse,
   BillingCalculationDto,
@@ -52,6 +53,50 @@ export function ConvertBillingQty(
   return qty;
 }
 
+/* ------------------------------------------------------------------ */
+/* Money helpers — all bill arithmetic is done in whole paise          */
+/* (integers) so rounding happens once per line and totals always      */
+/* equal the sum of the printed lines.                                 */
+/* ------------------------------------------------------------------ */
+
+const toPaise = (rupees: number): number => Math.round((rupees + Number.EPSILON) * 100);
+const toRupees = (paise: number): number => paise / 100;
+
+/**
+ * Splits `totalP` paise across lines in proportion to `weights`, using the
+ * largest-remainder method so the shares add up to exactly `totalP`.
+ */
+function allocateProportionally(totalP: number, weights: number[]): number[] {
+  const weightSum = weights.reduce((a, b) => a + b, 0);
+  if (weightSum === 0) return weights.map(() => 0);
+
+  const raw = weights.map(w => (totalP * w) / weightSum);
+  const shares = raw.map(v => Math.floor(v));
+  let remainder = totalP - shares.reduce((a, b) => a + b, 0);
+
+  const order = raw
+    .map((v, i) => ({ i, frac: v - Math.floor(v) }))
+    .sort((a, b) => b.frac - a.frac);
+
+  for (let k = 0; remainder > 0 && k < order.length; k++, remainder--) {
+    shares[order[k].i] += 1;
+  }
+  return shares;
+}
+
+interface CalcLine {
+  productId: number | null;
+  productName: string;
+  sku: string | null;
+  quantity: number;
+  unitPrice: number;
+  isCustom: boolean;
+  unit: string;
+  gstPercentage: number;
+  subtotalP: number;
+  discountP: number;
+}
+
 export async function calculateBillingHandler(
   items: BillingItemRequestDto[],
   manualDiscount?: number | null,
@@ -79,10 +124,7 @@ export async function calculateBillingHandler(
       }
     });
 
-    const calcItems: any[] = [];
-    let subtotal = 0;
-    let totalDiscount = 0;
-    let totalGst = 0;
+    const lines: CalcLine[] = [];
 
     for (const req of items) {
       if (!req.quantity || req.quantity <= 0) {
@@ -96,8 +138,8 @@ export async function calculateBillingHandler(
       let unitPrice: number;
       let gstPercentage: number;
       let productId: number | null = null;
-      let lineSubtotal: number;
-      let bestDiscount = 0;
+      let subtotalP: number;
+      let bestDiscountP = 0;
 
       if (isCustom) {
         if (!req.customProductName || req.customProductName.trim() === '') {
@@ -115,7 +157,7 @@ export async function calculateBillingHandler(
         unit = req.customUnit && req.customUnit.trim() ? req.customUnit.trim() : 'Kg';
         unitPrice = req.customUnitPrice;
         gstPercentage = gst;
-        lineSubtotal = unitPrice * req.quantity;
+        subtotalP = toPaise(unitPrice * req.quantity);
       } else {
         productId = req.productId!;
         const product = await prisma.product.findUnique({
@@ -136,25 +178,24 @@ export async function calculateBillingHandler(
         unitPrice = product.sellingPrice;
         gstPercentage = product.gstPercentage;
         const baseQty = ConvertBillingQty(req.quantity, billingUnit, product.unit, req.unitsPerBox);
-        lineSubtotal = baseQty * unitPrice;
+        subtotalP = toPaise(baseQty * unitPrice);
 
         const applicableOffers = activeOffers.filter(
           o => o.productId === null || o.productId === product.id
         );
 
         for (const offer of applicableOffers) {
-          let discount = 0;
+          let discountP = 0;
           const offerType = offer.offerType.toLowerCase();
 
           if (offerType.includes('percentage') && offer.discountPercentage !== null) {
             if (offer.minimumQuantity === null || baseQty >= offer.minimumQuantity) {
-              discount = lineSubtotal * (offer.discountPercentage / 100);
+              discountP = Math.round((subtotalP * offer.discountPercentage) / 100);
             }
           } else if (offerType.includes('fixed') && offer.discountAmount !== null) {
             if (offer.minimumQuantity === null || baseQty >= offer.minimumQuantity) {
-              discount = offer.discountAmount * baseQty;
+              discountP = toPaise(offer.discountAmount * baseQty);
             }
-            discount = Math.min(discount, lineSubtotal);
           } else if (
             offerType.includes('buy') &&
             offer.buyQuantity !== null &&
@@ -164,13 +205,16 @@ export async function calculateBillingHandler(
             const free = offer.freeQuantity;
             const eligibleSets = Math.floor(baseQty / buy);
             const freeQty = eligibleSets * free;
-            discount = Math.min(freeQty, Math.floor(baseQty)) * unitPrice;
+            discountP = toPaise(Math.min(freeQty, Math.floor(baseQty)) * unitPrice);
           } else if (offerType.includes('bill')) {
             continue;
           }
 
-          if (discount > bestDiscount) {
-            bestDiscount = discount;
+          // A line discount can never exceed the line itself
+          discountP = Math.min(discountP, subtotalP);
+
+          if (discountP > bestDiscountP) {
+            bestDiscountP = discountP;
           }
         }
       }
@@ -179,89 +223,147 @@ export async function calculateBillingHandler(
         gstPercentage = manualTaxPercentage;
       }
 
-      const lineDiscount = bestDiscount;
-      const taxable = lineSubtotal - lineDiscount;
-      const gstAmt = taxable * (gstPercentage / 100);
-      const total = taxable + gstAmt;
-
-      calcItems.push({
+      lines.push({
         productId,
         productName,
         sku,
         quantity: req.quantity,
         unitPrice,
-        subtotal: lineSubtotal,
-        discount: lineDiscount,
-        gstPercentage,
-        gstAmount: gstAmt,
-        totalAmount: total,
         isCustom,
-        unit
+        unit,
+        gstPercentage,
+        subtotalP,
+        discountP: bestDiscountP
       });
-
-      subtotal += lineSubtotal;
-      totalDiscount += lineDiscount;
-      totalGst += gstAmt;
     }
 
-    const billOffers = activeOffers.filter(
-      o => o.productId === null && o.offerType.toLowerCase().includes('bill')
-    );
-    for (const bo of billOffers) {
-      if (bo.discountPercentage !== null && bo.discountPercentage !== undefined) {
-        const d = subtotal * (bo.discountPercentage / 100);
-        totalDiscount = Math.max(totalDiscount, d);
-      } else if (bo.discountAmount !== null && bo.discountAmount !== undefined) {
-        totalDiscount = Math.max(totalDiscount, bo.discountAmount);
-      }
-    }
+    const subtotalP = lines.reduce((s, l) => s + l.subtotalP, 0);
+    const lineDiscountP = lines.reduce((s, l) => s + l.discountP, 0);
+
+    // A bill-level discount (manual, or a "bill" offer) replaces the per-line
+    // discounts and is spread across the lines, so line amounts, GST and the
+    // grand total all stay consistent with each other.
+    let billDiscountOverrideP: number | null = null;
 
     if (manualDiscount !== undefined && manualDiscount !== null) {
       if (manualDiscount < 0) {
         return { success: false, message: 'Manual discount cannot be negative' };
       }
-      if (manualDiscount > subtotal) {
+      const manualP = toPaise(manualDiscount);
+      if (manualP > subtotalP) {
         return { success: false, message: 'Manual discount cannot exceed subtotal' };
       }
-      totalDiscount = manualDiscount;
-    }
+      billDiscountOverrideP = manualP;
+    } else {
+      let billOfferP = 0;
+      for (const bo of activeOffers) {
+        if (bo.productId !== null || !bo.offerType.toLowerCase().includes('bill')) continue;
 
-    let taxableAmount = subtotal - totalDiscount;
-    if (taxableAmount < 0) taxableAmount = 0;
+        let d = 0;
+        if (bo.discountPercentage !== null && bo.discountPercentage !== undefined) {
+          d = Math.round((subtotalP * bo.discountPercentage) / 100);
+        } else if (bo.discountAmount !== null && bo.discountAmount !== undefined) {
+          d = toPaise(bo.discountAmount);
+        }
+        billOfferP = Math.max(billOfferP, d);
+      }
+      billOfferP = Math.min(billOfferP, subtotalP);
 
-    if (manualDiscount !== undefined && manualDiscount !== null) {
-      const factor = subtotal === 0 ? 1 : taxableAmount / subtotal;
-      totalGst = 0;
-      for (const item of calcItems) {
-        const newTaxable = item.subtotal * factor;
-        const propDiscount = item.subtotal - newTaxable;
-        item.discount = propDiscount;
-        item.gstAmount = newTaxable * (item.gstPercentage / 100);
-        item.totalAmount = newTaxable + item.gstAmount;
-        totalGst += item.gstAmount;
+      // Same rule as before: the bill offer only applies if it beats the line offers
+      if (billOfferP > lineDiscountP) {
+        billDiscountOverrideP = billOfferP;
       }
     }
 
-    const cgst = totalGst / 2;
-    const sgst = totalGst / 2;
-    const grandTotal = taxableAmount + totalGst;
+    if (billDiscountOverrideP !== null) {
+      const shares = allocateProportionally(
+        billDiscountOverrideP,
+        lines.map(l => l.subtotalP)
+      );
+      lines.forEach((l, i) => {
+        l.discountP = shares[i];
+      });
+    }
+
+    // Final per-line amounts, in whole paise
+    const finalLines = lines.map(l => {
+      const taxableP = l.subtotalP - l.discountP;
+      const gstP = Math.round((taxableP * l.gstPercentage) / 100);
+      return { ...l, taxableP, gstP, totalP: taxableP + gstP };
+    });
+
+    const totalSubtotalP = finalLines.reduce((s, l) => s + l.subtotalP, 0);
+    const totalDiscountP = finalLines.reduce((s, l) => s + l.discountP, 0);
+    const totalTaxableP = finalLines.reduce((s, l) => s + l.taxableP, 0);
+    const totalGstP = finalLines.reduce((s, l) => s + l.gstP, 0);
+    const grandTotalP = totalTaxableP + totalGstP;
+
+    // CGST + SGST always add up to the GST total (odd paisa goes to SGST)
+    const cgstP = Math.floor(totalGstP / 2);
+    const sgstP = totalGstP - cgstP;
 
     return {
       success: true,
       data: {
-        items: calcItems,
-        subtotal: Math.round(subtotal * 100) / 100,
-        discount: Math.round(totalDiscount * 100) / 100,
-        taxableAmount: Math.round(taxableAmount * 100) / 100,
-        gstAmount: Math.round(totalGst * 100) / 100,
-        cgstAmount: Math.round(cgst * 100) / 100,
-        sgstAmount: Math.round(sgst * 100) / 100,
-        grandTotal: Math.round(grandTotal * 100) / 100
+        items: finalLines.map(l => ({
+          productId: l.productId,
+          productName: l.productName,
+          sku: l.sku,
+          quantity: l.quantity,
+          unitPrice: l.unitPrice,
+          subtotal: toRupees(l.subtotalP),
+          discount: toRupees(l.discountP),
+          gstPercentage: l.gstPercentage,
+          gstAmount: toRupees(l.gstP),
+          totalAmount: toRupees(l.totalP),
+          isCustom: l.isCustom,
+          unit: l.unit
+        })),
+        subtotal: toRupees(totalSubtotalP),
+        discount: toRupees(totalDiscountP),
+        taxableAmount: toRupees(totalTaxableP),
+        gstAmount: toRupees(totalGstP),
+        cgstAmount: toRupees(cgstP),
+        sgstAmount: toRupees(sgstP),
+        grandTotal: toRupees(grandTotalP)
       }
     };
   } catch (error: any) {
     return { success: false, message: error.message || 'Error calculating bill' };
   }
+}
+
+/**
+ * Returns the next invoice number for the current year, e.g. INV-2026-000042.
+ * Uses a counter table so numbers are never reused, even if sales are cancelled.
+ * Must be called inside the same transaction that creates the sale, so a failed
+ * bill also rolls the counter back (no skipped numbers).
+ */
+async function getNextInvoiceNumber(tx: Prisma.TransactionClient): Promise<string> {
+  const year = new Date().getFullYear();
+  const prefix = `INV-${year}-`;
+
+  // First invoice of the year (or first run after this update):
+  // start the counter from the highest number already used.
+  const existingCounter = await tx.invoiceCounter.findUnique({ where: { year } });
+  if (!existingCounter) {
+    const used = await tx.sale.findMany({
+      where: { invoiceNumber: { startsWith: prefix } },
+      select: { invoiceNumber: true }
+    });
+    const maxUsed = used.reduce((max, s) => {
+      const n = parseInt(s.invoiceNumber.slice(prefix.length), 10);
+      return Number.isFinite(n) && n > max ? n : max;
+    }, 0);
+    await tx.invoiceCounter.create({ data: { year, lastNumber: maxUsed } });
+  }
+
+  const updated = await tx.invoiceCounter.update({
+    where: { year },
+    data: { lastNumber: { increment: 1 } }
+  });
+
+  return `${prefix}${String(updated.lastNumber).padStart(6, '0')}`;
 }
 
 export async function createBillHandler(
@@ -315,18 +417,8 @@ export async function createBillHandler(
         agentPhone = byName?.phone || '';
       }
 
-      // Generate invoice number
-      const year = new Date().getFullYear();
-      let invoiceNumber = '';
-      let attempts = 0;
-      do {
-        const count = (await tx.sale.count()) + 1 + attempts;
-        const pad = String(count).padStart(6, '0');
-        invoiceNumber = `INV-${year}-${pad}`;
-        attempts++;
-        const existing = await tx.sale.findUnique({ where: { invoiceNumber } });
-        if (!existing) break;
-      } while (true);
+      // Generate invoice number (never reused, even after cancellations)
+      const invoiceNumber = await getNextInvoiceNumber(tx);
 
       const paymentStatus = request.paymentMethod === 'Cash' ? 'Success' : 'Pending';
 
@@ -336,7 +428,7 @@ export async function createBillHandler(
           salesWorkerId,
           agentName,
           agentPhone: agentPhone || null,
-          shopName: request.shopName && request.shopName.trim() ? request.shopName.trim() : null,  // ADD
+          shopName: request.shopName && request.shopName.trim() ? request.shopName.trim() : null,
           customerName: request.customerName || null,
           customerPhone: request.customerPhone || null,
           customerEmail: request.customerEmail || null,
@@ -354,10 +446,12 @@ export async function createBillHandler(
         }
       });
 
-      for (const calcItem of calc.items) {
-        const origReq = request.items.find(
-          r => (r.isCustom && calcItem.isCustom) || r.productId === calcItem.productId
-        );
+      // calc.items is built in the same order as request.items, so match by index.
+      // (Using find() by productId picks the wrong request when the same product
+      // is billed twice in different units.)
+      for (let idx = 0; idx < calc.items.length; idx++) {
+        const calcItem = calc.items[idx];
+        const origReq = request.items[idx];
 
         if (calcItem.isCustom || !calcItem.productId) {
           await tx.saleItem.create({
@@ -383,7 +477,12 @@ export async function createBillHandler(
         if (!product) throw new Error(`Product ${calcItem.productId} not found`);
 
         const billingUnitForStock = origReq?.billingUnit || calcItem.unit || product.unit;
-        const baseQtyForStock = ConvertBillingQty(calcItem.quantity, billingUnitForStock, product.unit, origReq?.unitsPerBox);
+        const baseQtyForStock = ConvertBillingQty(
+          calcItem.quantity,
+          billingUnitForStock,
+          product.unit,
+          origReq?.unitsPerBox
+        );
         const prevStock = product.stockQuantity;
         const newStock = prevStock - baseQtyForStock;
         if (newStock < 0) throw new Error(`Negative stock for ${product.productName}`);
@@ -401,6 +500,7 @@ export async function createBillHandler(
             productName: product.productName,
             sku: product.sku,
             unit: billingUnitForStock,
+            unitsPerBox: origReq?.unitsPerBox ?? null, // saved so edit/cancel can reverse stock exactly
             quantity: calcItem.quantity,
             unitPrice: calcItem.unitPrice,
             discount: calcItem.discount,

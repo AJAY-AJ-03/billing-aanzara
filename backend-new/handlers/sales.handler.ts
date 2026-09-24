@@ -202,6 +202,10 @@ export async function updateSaleHandler(
 
     if (!sale) return { success: false, message: 'Sale not found' };
 
+    if (sale.saleStatus === 'Cancelled') {
+      return { success: false, message: 'Cancelled invoices cannot be edited' };
+    }
+
     const updateData: any = {};
     if (dto.agentName !== undefined) updateData.agentName = dto.agentName;
     if (dto.agentPhone !== undefined) updateData.agentPhone = dto.agentPhone;
@@ -223,13 +227,28 @@ export async function updateSaleHandler(
       });
 
       if (dto.items && Array.isArray(dto.items) && dto.items.length > 0) {
-        // Revert old stock for non-custom items
+        // The edit screen does not send unitsPerBox, so fill it in from the
+        // originally saved sale items (match by saleItemId, else product + unit).
+        // Without this, boxes/packs fall back to the 12/6 defaults.
+        const items: any[] = dto.items.map((it: any) => {
+          const old =
+            sale.saleItems.find(si => si.id === it.saleItemId) ||
+            sale.saleItems.find(
+              si => !si.isCustom && si.productId === it.productId && si.unit === it.billingUnit
+            );
+          return {
+            ...it,
+            unitsPerBox: it.unitsPerBox ?? old?.unitsPerBox ?? undefined
+          };
+        });
+
+        // Revert old stock for non-custom items (using each item's saved box size)
         for (const old of sale.saleItems) {
           if (!old.isCustom && old.productId) {
             const prod = await tx.product.findUnique({ where: { id: old.productId } });
             if (prod) {
               const oldBillingUnit = old.unit || prod.unit;
-              const oldBaseQty = ConvertBillingQty(old.quantity, oldBillingUnit, prod.unit, null);
+              const oldBaseQty = ConvertBillingQty(old.quantity, oldBillingUnit, prod.unit, old.unitsPerBox);
               const prev = prod.stockQuantity;
               const newStock = prev + oldBaseQty;
 
@@ -258,7 +277,7 @@ export async function updateSaleHandler(
         await tx.saleItem.deleteMany({ where: { saleId: id } });
 
         // Recalculate bill
-        const calcRes = await calculateBillingHandler(dto.items, dto.manualDiscount, dto.manualTaxPercentage);
+        const calcRes = await calculateBillingHandler(items, dto.manualDiscount, dto.manualTaxPercentage);
         if (!calcRes.success || !calcRes.data) {
           throw new Error(calcRes.message || 'Recalculation failed');
         }
@@ -278,10 +297,11 @@ export async function updateSaleHandler(
           }
         });
 
-        // Recreate sale items and deduct stock
+        // Recreate sale items and deduct stock.
+        // calc.items is in the same order as items, so match by index.
         for (let idx = 0; idx < calc.items.length; idx++) {
           const ci = calc.items[idx];
-          const orig = dto.items.find((d: any) => d.productId === ci.productId && d.isCustom === ci.isCustom) || dto.items[idx];
+          const orig = items[idx];
 
           if (ci.isCustom || !ci.productId) {
             await tx.saleItem.create({
@@ -325,6 +345,7 @@ export async function updateSaleHandler(
                 productName: prod.productName,
                 sku: prod.sku,
                 unit: ci.unit,
+                unitsPerBox: orig?.unitsPerBox ?? null,
                 quantity: ci.quantity,
                 unitPrice: ci.unitPrice,
                 discount: ci.discount,
@@ -367,7 +388,8 @@ export async function updateSaleHandler(
           customUnitPrice: si.isCustom ? si.unitPrice : undefined,
           customGSTPercentage: si.isCustom ? si.gstPercentage : undefined,
           customUnit: si.isCustom ? si.unit || 'Kg' : undefined,
-          billingUnit: si.unit || undefined
+          billingUnit: si.unit || undefined,
+          unitsPerBox: si.unitsPerBox ?? undefined
         }));
 
         const calcRes = await calculateBillingHandler(
@@ -435,13 +457,18 @@ export async function updateSaleHandler(
   }
 }
 
-export async function deleteSaleHandler(
+/**
+ * Cancels a sale instead of deleting it. The invoice, its items and payments
+ * are kept for the records (so invoice numbers are never lost); stock is
+ * restored and the sale is marked as Cancelled.
+ */
+export async function cancelSaleHandler(
   id: number,
   callingUser?: { id: number; role: string } | null
 ): Promise<ApiResponse<boolean>> {
   try {
     if (!callingUser || callingUser.role !== 'Admin') {
-      return { success: false, message: 'Forbidden: Only Admin can delete sales' };
+      return { success: false, message: 'Forbidden: Only Admin can cancel sales' };
     }
 
     const prisma = getPrismaClient();
@@ -451,16 +478,19 @@ export async function deleteSaleHandler(
     });
 
     if (!sale) return { success: false, message: 'Sale not found' };
+    if (sale.saleStatus === 'Cancelled') {
+      return { success: false, message: 'This invoice is already cancelled' };
+    }
 
     const { ConvertBillingQty } = require('./billing.handler');
 
     await prisma.$transaction(async tx => {
-      // Revert stock for non-custom items
+      // Restore stock for non-custom items (using each item's saved box size)
       for (const si of sale.saleItems) {
         if (!si.isCustom && si.productId) {
           const prod = await tx.product.findUnique({ where: { id: si.productId } });
           if (prod) {
-            const baseQty = ConvertBillingQty(si.quantity, si.unit || prod.unit, prod.unit, null);
+            const baseQty = ConvertBillingQty(si.quantity, si.unit || prod.unit, prod.unit, si.unitsPerBox);
             const prev = prod.stockQuantity;
             const newStock = prev + baseQty;
 
@@ -476,8 +506,8 @@ export async function deleteSaleHandler(
                 quantity: baseQty,
                 previousStock: prev,
                 newStock,
-                reference: `${sale.invoiceNumber}-DEL`,
-                remarks: `Sale ${sale.invoiceNumber} deleted`,
+                reference: `${sale.invoiceNumber}-CAN`,
+                remarks: `Sale ${sale.invoiceNumber} cancelled`,
                 createdBy: callingUser?.id || null
               }
             });
@@ -485,17 +515,28 @@ export async function deleteSaleHandler(
         }
       }
 
-      await tx.payment.deleteMany({ where: { saleId: id } });
-      await tx.saleItem.deleteMany({ where: { saleId: id } });
-      await tx.sale.delete({ where: { id } });
+      // Keep the invoice, items and payments; just mark them cancelled
+      await tx.payment.updateMany({
+        where: { saleId: id },
+        data: { status: 'Cancelled' }
+      });
+
+      await tx.sale.update({
+        where: { id },
+        data: {
+          saleStatus: 'Cancelled',
+          paymentStatus: 'Cancelled',
+          cancelledAt: new Date()
+        }
+      });
     });
 
     return {
       success: true,
-      message: 'Sale deleted successfully',
+      message: 'Invoice cancelled and stock restored',
       data: true
     };
   } catch (error: any) {
-    return { success: false, message: error.message || 'Error deleting sale' };
+    return { success: false, message: error.message || 'Error cancelling sale' };
   }
 }
