@@ -336,6 +336,7 @@ export async function createBillHandler(
           salesWorkerId,
           agentName,
           agentPhone: agentPhone || null,
+          shopName: request.shopName && request.shopName.trim() ? request.shopName.trim() : null,  // ADD
           customerName: request.customerName || null,
           customerPhone: request.customerPhone || null,
           customerEmail: request.customerEmail || null,

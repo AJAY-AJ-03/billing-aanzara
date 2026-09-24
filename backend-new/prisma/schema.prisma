@@ -104,6 +104,7 @@ model Sale {
   customerEmail   String?
   customerAddress String?
   customerGSTIN   String?
+  shopName        String?
   salesWorkerId   Int
   salesWorker     User       @relation(fields: [salesWorkerId], references: [id], onDelete: Restrict)
   agentName       String?

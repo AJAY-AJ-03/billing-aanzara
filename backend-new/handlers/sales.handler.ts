@@ -139,6 +139,7 @@ function mapSaleToDto(sale: any): SaleDto {
     invoiceNumber: sale.invoiceNumber,
     agentName: sale.agentName || null,
     agentPhone: sale.agentPhone || null,
+    shopName: sale.shopName || null,
     customerId: sale.customerId,
     customerName: sale.customerName,
     customerPhone: sale.customerPhone,
@@ -204,6 +205,7 @@ export async function updateSaleHandler(
     const updateData: any = {};
     if (dto.agentName !== undefined) updateData.agentName = dto.agentName;
     if (dto.agentPhone !== undefined) updateData.agentPhone = dto.agentPhone;
+    if (dto.shopName !== undefined) updateData.shopName = dto.shopName;
     if (dto.customerName !== undefined) updateData.customerName = dto.customerName;
     if (dto.customerPhone !== undefined) updateData.customerPhone = dto.customerPhone;
     if (dto.customerEmail !== undefined) updateData.customerEmail = dto.customerEmail;

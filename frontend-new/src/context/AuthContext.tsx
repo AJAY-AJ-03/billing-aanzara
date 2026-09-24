@@ -1,5 +1,6 @@
-import React, { createContext, useContext, useState } from 'react';
+import React, { createContext, useContext, useState, useEffect } from 'react';  // CHANGED (added useEffect)
 import type { LoginResponseDto } from '../../../shared/types/ipc';
+import api from '../services/ipcApi';  // ADDED — needed at module scope now, not just dynamic import in logout()
 
 interface AuthUser {
   userId: number;
@@ -16,22 +17,52 @@ interface AuthContextType {
   logout: () => void;
   isAuthenticated: boolean;
   isAdmin: boolean;
+  isRestoring: boolean;   // ADDED
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [user, setUser] = useState<AuthUser | null>(() => {
-    const saved = localStorage.getItem('aanzara_user');
-    if (saved) {
-      try {
-        return JSON.parse(saved);
-      } catch (e) {
-        return null;
+  const [user, setUser] = useState<AuthUser | null>(null);          // CHANGED — no longer read localStorage synchronously here
+  const [isRestoring, setIsRestoring] = useState(true);              // ADDED
+
+  // ADDED — on app start, re-establish the main-process session from the
+  // cached userId instead of trusting localStorage alone. If the account
+  // was deactivated/deleted since last launch, this logs the user out
+  // cleanly instead of leaving the UI showing a session main.ts doesn't have.
+  useEffect(() => {
+    const restore = async () => {
+      const saved = localStorage.getItem('aanzara_user');
+      if (!saved) {
+        setIsRestoring(false);
+        return;
       }
-    }
-    return null;
-  });
+      try {
+        const cached: AuthUser = JSON.parse(saved);
+        const res = await api.auth.restoreSession(cached.userId);
+        if (res.success && res.data) {
+          const authUser: AuthUser = {
+            userId: res.data.userId,
+            id: res.data.userId,
+            name: res.data.name,
+            role: res.data.role as 'Admin' | 'SalesWorker',
+            email: res.data.email,
+            phone: cached.phone || null
+          };
+          setUser(authUser);
+          localStorage.setItem('aanzara_user', JSON.stringify(authUser)); // refresh cache with latest DB values
+        } else {
+          localStorage.removeItem('aanzara_user');
+          setUser(null);
+        }
+      } catch (e) {
+        localStorage.removeItem('aanzara_user');
+        setUser(null);
+      }
+      setIsRestoring(false);
+    };
+    restore();
+  }, []);
 
   const login = (data: LoginResponseDto) => {
     const authUser: AuthUser = {
@@ -47,7 +78,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const logout = () => {
-    import('../services/ipcApi').then(m => m.default.auth.logout()).catch(() => {});
+    api.auth.logout().catch(() => {});   // CHANGED — reuse the module-level import instead of dynamic import
     setUser(null);
     localStorage.removeItem('aanzara_user');
   };
@@ -56,7 +87,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const isAdmin = user?.role === 'Admin';
 
   return (
-    <AuthContext.Provider value={{ user, login, logout, isAuthenticated, isAdmin }}>
+    <AuthContext.Provider value={{ user, login, logout, isAuthenticated, isAdmin, isRestoring }}>
       {children}
     </AuthContext.Provider>
   );

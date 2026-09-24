@@ -20,6 +20,7 @@ export const createBillRequestSchema = z.object({
   customerEmail: z.string().optional().nullable(),
   customerAddress: z.string().optional().nullable(),
   customerGSTIN: z.string().optional().nullable(),
+  shopName: z.string().optional().nullable(),
   paymentMethod: z.enum(['Cash', 'UPI', 'Card', 'Other']),
   manualDiscount: z.number().optional().nullable(),
   manualTaxPercentage: z.number().optional().nullable(),

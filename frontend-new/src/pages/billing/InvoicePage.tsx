@@ -239,7 +239,7 @@ export const InvoicePage: React.FC = () => {
     <div style={{ maxWidth: '900px', margin: '0 auto', paddingBottom: '40px' }}>
       {/* Top Action Bar */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px' }}>
-        <button className="btn btn-secondary" onClick={() => navigate('/billing/create')}>
+        <button className="btn btn-secondary" style={{ background: '#e2e8f0', color: '#0f172a', border: '1px solid #cbd5e1' }} onClick={() => navigate('/billing/create')}>
           <ArrowLeft size={16} />
           <span>Back to POS</span>
         </button>
@@ -258,7 +258,7 @@ export const InvoicePage: React.FC = () => {
             </>
           )}
 
-          <button className="btn btn-secondary" onClick={handleDownloadPdf}>
+          <button className="btn btn-secondary" style={{ background: '#e2e8f0', color: '#0f172a', border: '1px solid #cbd5e1' }} onClick={handleDownloadPdf}>
             <Download size={16} />
             <span>Download PDF</span>
           </button>
@@ -300,14 +300,30 @@ export const InvoicePage: React.FC = () => {
               <td colSpan={3} style={{ border: '1px solid #000', padding: '6px', textAlign: 'center' }}>{invoice.agentPhone || '—'}</td>
             </tr>
 
-            {/* Address & Summary Grid */}
+            {/* Address Row */}
             <tr>
-              <td style={{ border: '1px solid #000', padding: '6px', fontWeight: 700 }} rowSpan={2}>Address :</td>
-              <td colSpan={2} style={{ border: '1px solid #000', padding: '6px' }} rowSpan={2}>{invoice.customerAddress || invoice.businessAddress || '—'}</td>
-              <td style={{ border: '1px solid #000', padding: '6px', fontWeight: 700 }}>Product Count</td>
-              <td colSpan={3} style={{ border: '1px solid #000', padding: '6px', textAlign: 'center' }}>{totalQty()}</td>
+              <td style={{ border: '1px solid #000', padding: '6px', fontWeight: 700 }}>Address :</td>
+              <td colSpan={6} style={{ border: '1px solid #000', padding: '6px' }}>{invoice.customerAddress || invoice.businessAddress || '—'}</td>
             </tr>
+
+            {/* Shop Name Row */}
             <tr>
+              <td style={{ border: '1px solid #000', padding: '6px', fontWeight: 700 }}>Shop Name :</td>
+              <td colSpan={6} style={{ border: '1px solid #000', padding: '6px' }}>{invoice.shopName || '—'}</td>
+            </tr>
+
+            {/* Account Number / IFSC Row */}
+            <tr>
+              <td style={{ border: '1px solid #000', padding: '6px', fontWeight: 700 }}>Account Number :</td>
+              <td colSpan={2} style={{ border: '1px solid #000', padding: '6px', textAlign: 'center' }}>{invoice.businessAccountNumber || '—'}</td>
+              <td style={{ border: '1px solid #000', padding: '6px', fontWeight: 700 }}>IFSC Code</td>
+              <td colSpan={3} style={{ border: '1px solid #000', padding: '6px', textAlign: 'center' }}>{invoice.businessIFSC || '—'}</td>
+            </tr>
+
+            {/* Product Count / Total Price Row */}
+            <tr>
+              <td style={{ border: '1px solid #000', padding: '6px', fontWeight: 700 }}>Product Count</td>
+              <td colSpan={2} style={{ border: '1px solid #000', padding: '6px', textAlign: 'center' }}>{totalQty()}</td>
               <td style={{ border: '1px solid #000', padding: '6px', fontWeight: 700 }}>Total Price</td>
               <td colSpan={3} style={{ border: '1px solid #000', padding: '6px', textAlign: 'center', fontWeight: 800 }}>Rs.{invoice.grandTotal.toFixed(1)}/-</td>
             </tr>
@@ -369,7 +385,7 @@ export const InvoicePage: React.FC = () => {
             </tr>
             <tr>
               <td colSpan={7} style={{ border: '1px solid #000', padding: '4px', textAlign: 'center', fontSize: '10px' }}>
-                Email : Egsfinance2025@gmail.com, Aanzaracorporate@gmail.com, aanzarabusiness@gmail.com / for compliance - +91 8754850826
+                Email : Aanzaracorporate@gmail.com, aanzarabusiness@gmail.com, Egsfinance2025@gmail.com / for compliance - +91 8754850826
               </td>
             </tr>
             <tr>
@@ -389,7 +405,6 @@ export const InvoicePage: React.FC = () => {
     5. Product expiry ஆகும் முன் முன்கூட்டியே தகவல் வழங்குவது கட்டாயம். (குறைந்தது 60 நாட்களுக்கு முன்).
   </td>
   <td colSpan={2} style={{ border: '1px solid #000', padding: '10px', textAlign: 'center', verticalAlign: 'middle' }}>
-    {/* ⬇️ this block replaced — was the "QR" text placeholder */}
     <div style={{ border: '1px solid #000', width: '70px', height: '70px', margin: '0 auto 6px auto', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
       <img src={qrImg} alt="Payment QR" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
     </div>

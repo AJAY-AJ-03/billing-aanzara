@@ -123,6 +123,15 @@ export async function generateInvoicePdfHandler(saleId: number): Promise<ApiResp
     y += rowH;
     drawHeaderRow(y, 'Address :', inv.customerAddress || inv.businessAddress || '—', '', '');
     y += rowH;
+    
+
+    // ADD — Shop Name row
+    drawHeaderRow(y, 'Shop Name :', inv.shopName || '—', '', '');
+    y += rowH;
+
+    drawHeaderRow(y, 'Account Number :', inv.businessAccountNumber || '—', 'IFSC Code', inv.businessIFSC || '—');
+y += rowH;
+
 
     // Summary row inside grid
     doc.rect(left, y, colW1 + colW2, rowH).stroke('#000000');
@@ -207,7 +216,7 @@ export async function generateInvoicePdfHandler(saleId: number): Promise<ApiResp
     y += 14;
 
     doc.rect(left, y, width, 14).stroke('#000000');
-    doc.font('Helvetica').fontSize(5).text('Email : Egsfinance2025@gmail.com, Aanzaracorporate@gmail.com, aanzarabusiness@gmail.com / for compliance - +91 8754850826', left, y + 4, { width, align: 'center' });
+    doc.font('Helvetica').fontSize(5).text('Email : Aanzaracorporate@gmail.com, aanzarabusiness@gmail.com, Egsfinance2025@gmail.com / for compliance - +91 8754850826', left, y + 4, { width, align: 'center' });
     y += 14;
 
     doc.rect(left, y, width, 14).stroke('#000000');
@@ -279,6 +288,7 @@ function mapSaleToInvoiceDto(sale: any): InvoiceDto {
     invoiceDate: sale.createdAt.toISOString(),
     agentName: sale.agentName || sale.salesWorker?.name || 'SAJIN CLARET',
     agentPhone: sale.agentPhone || sale.salesWorker?.phone || '',
+    shopName: sale.shopName || null,
     customerName: sale.customerName,
     customerPhone: sale.customerPhone,
     customerEmail: sale.customerEmail,
@@ -289,6 +299,8 @@ function mapSaleToInvoiceDto(sale: any): InvoiceDto {
     businessPhone: '8754850826',
     businessEmail: 'Aanzaracorporate@gmail.com',
     businessGSTIN: '',
+    businessAccountNumber: '1772010000000268',    
+    businessIFSC: 'KVBL0001772',            
     subtotal: sale.subtotal,
     discount: sale.discount,
     taxableAmount: sale.subtotal - sale.discount,

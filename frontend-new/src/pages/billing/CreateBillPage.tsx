@@ -69,6 +69,7 @@ export const CreateBillPage: React.FC = () => {
 
   const [customerName, setCustomerName] = useState('');
   const [customerPhone, setCustomerPhone] = useState('');
+  const [shopName, setShopName] = useState('');
 
   /* ---------- Payment / Adjustments ---------- */
   const [paymentMethod, setPaymentMethod] = useState<'Cash' | 'UPI' | 'Card' | 'Other'>('Cash');
@@ -382,6 +383,7 @@ export const CreateBillPage: React.FC = () => {
       customerEmail: undefined,
       customerAddress: undefined,
       customerGSTIN: undefined,
+      shopName: shopName.trim() || undefined,
       agentName: agentName.trim() || undefined,
       agentPhone: agentPhone.trim() || undefined,
       paymentMethod,
@@ -514,6 +516,17 @@ export const CreateBillPage: React.FC = () => {
             onChange={(e) => setCustomerPhone(e.target.value)}
           />
         </div>
+      </div>
+
+      <div className="pos-meta-field">
+        <label className="pos-meta-label">Shop Name</label>
+        <input
+          type="text"
+          className="admin-input"
+          placeholder="Optional"
+          value={shopName}
+          onChange={(e) => setShopName(e.target.value)}
+        />
       </div>
 
       {/* ---------- Two-column: cart + checkout ---------- */}

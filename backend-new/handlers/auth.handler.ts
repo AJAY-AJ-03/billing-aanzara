@@ -47,3 +47,34 @@ export async function loginHandler(request: LoginRequestDto): Promise<ApiRespons
     return { success: false, message: error.message || 'An error occurred during login' };
   }
 }
+export async function restoreSessionHandler(userId: number): Promise<ApiResponse<LoginResponseDto>> {
+  try {
+    if (!userId || typeof userId !== 'number') {
+      return { success: false, message: 'Invalid session' };
+    }
+
+    const prisma = getPrismaClient();
+    const user = await prisma.user.findUnique({ where: { id: userId } });
+
+    if (!user) {
+      return { success: false, message: 'Session expired: account no longer exists' };
+    }
+    if (!user.isActive) {
+      return { success: false, message: 'Session expired: account is deactivated' };
+    }
+
+    return {
+      success: true,
+      message: 'Session restored',
+      data: {
+        userId: user.id,
+        name: user.name,
+        role: user.role,
+        email: user.email,
+        accessToken: `session-${user.id}-${Date.now()}`
+      }
+    };
+  } catch (error: any) {
+    return { success: false, message: error.message || 'Failed to restore session' };
+  }
+}

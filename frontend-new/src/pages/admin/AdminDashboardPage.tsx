@@ -50,6 +50,7 @@ export const AdminDashboardPage: React.FC = () => {
   const [data, setData] = useState<AdminDashboardDto | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null); // ADDED
 
   useEffect(() => {
     loadDashboard();
@@ -58,11 +59,14 @@ export const AdminDashboardPage: React.FC = () => {
   const loadDashboard = async () => {
     setLoading(true);
     setError(false);
+    setErrorMessage(null); // ADDED
     const res = await api.dashboard.admin();
     if (res.success && res.data) {
       setData(res.data);
     } else {
+      console.error('[dashboard:admin] failed:', res.message); // ADDED — check DevTools console
       setError(true);
+      setErrorMessage(res.message || null); // ADDED
     }
     setLoading(false);
   };
@@ -72,6 +76,12 @@ export const AdminDashboardPage: React.FC = () => {
     return (
       <div className="admin-state is-error">
         Couldn't load dashboard metrics. Try refreshing.
+        {errorMessage && (
+          // ADDED — shows the real backend error under the generic message
+          <div style={{ marginTop: 8, fontSize: 12, opacity: 0.75 }}>
+            {errorMessage}
+          </div>
+        )}
       </div>
     );
   }

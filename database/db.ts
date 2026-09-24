@@ -50,6 +50,7 @@ export function getDatabasePath(): string {
 export function getPrismaClient(): PrismaClient {
   if (!prisma) {
     const dbPath = getDatabasePath();
+    console.log('[DB] Using database file at:', dbPath);   // ADD THIS LINE
     const normalizedPath = path.resolve(dbPath).replace(/\\/g, '/');
     const dbUrl = `file:${normalizedPath}`;
     process.env.DATABASE_URL = dbUrl;

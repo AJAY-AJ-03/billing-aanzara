@@ -81,6 +81,11 @@ export const api = {
       if (electronApi) return handleResponse(electronApi.auth.login(req));
       return { success: false, message: 'Electron context bridge not available' };
     },
+    restoreSession: async (userId: number): Promise<ApiResponse<LoginResponseDto>> => {
+      const electronApi = getApi();
+      if (electronApi) return handleResponse(electronApi.auth.restoreSession(userId));
+      return { success: false, message: 'Electron context bridge not available' };
+    },
     logout: async (): Promise<ApiResponse<void>> => {
       const electronApi = getApi();
       if (electronApi) return handleResponse(electronApi.auth.logout());

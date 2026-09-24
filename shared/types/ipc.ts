@@ -285,6 +285,7 @@ export interface CreateBillRequestDto {
   customerEmail?: string;
   customerAddress?: string;
   customerGSTIN?: string;
+  shopName?: string;
   paymentMethod: 'Cash' | 'UPI' | 'Card' | 'Other';
   manualDiscount?: number;
   manualTaxPercentage?: number;
@@ -326,11 +327,14 @@ export interface InvoiceDto {
   customerEmail?: string | null;
   customerAddress?: string | null;
   customerGSTIN?: string | null;
+  shopName?: string | null;
   businessName?: string;
   businessAddress?: string;
   businessPhone?: string;
   businessEmail?: string;
   businessGSTIN?: string;
+  businessAccountNumber?: string;   // ADDED
+  businessIFSC?: string;            // ADDED
   subtotal: number;
   discount: number;
   taxableAmount: number;
@@ -353,6 +357,7 @@ export interface SaleListItemDto {
   agentPhone?: string | null;
   customerName?: string | null;
   customerPhone?: string | null;
+  shopName?: string | null;
   salesWorkerName?: string | null;
   grandTotal: number;
   paymentMethod: string;
@@ -399,6 +404,7 @@ export interface UpdateSaleDto {
   customerEmail?: string | null;
   customerAddress?: string | null;
   customerGSTIN?: string | null;
+  shopName?: string | null;
   paymentMethod?: string;
   manualDiscount?: number | null;
   manualTaxPercentage?: number | null;
@@ -416,6 +422,7 @@ export interface SaleDto {
   customerEmail?: string | null;
   customerAddress?: string | null;
   customerGSTIN?: string | null;
+  shopName?: string | null;
   salesWorkerId: number;
   salesWorkerName?: string | null;
   subtotal: number;

@@ -2,9 +2,10 @@ import { contextBridge, ipcRenderer } from 'electron';
 
 contextBridge.exposeInMainWorld('api', {
   auth: {
-    login: (req: any) => ipcRenderer.invoke('auth:login', req),
-    logout: () => ipcRenderer.invoke('auth:logout')
-  },
+  login: (req: any) => ipcRenderer.invoke('auth:login', req),
+  restoreSession: (userId: number) => ipcRenderer.invoke('auth:restoreSession', userId),  // ADDED
+  logout: () => ipcRenderer.invoke('auth:logout')
+},
   billing: {
     calculate: (items: any, manualDiscount?: number, manualTaxPercentage?: number) =>
       ipcRenderer.invoke('billing:calculate', items, manualDiscount, manualTaxPercentage),

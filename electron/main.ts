@@ -5,7 +5,6 @@ import fs from 'fs';
 import { getPrismaClient } from '../database/db';
 import { seedDatabase } from '../database/seed';
 
-import { loginHandler } from '../backend-new/handlers/auth.handler';
 import { calculateBillingHandler, createBillHandler, scanBarcodeHandler } from '../backend-new/handlers/billing.handler';
 import {
   getPagedProductsHandler,
@@ -73,6 +72,7 @@ import {
   verifyPaymentHandler,
   generateUpiUrlHandler
 } from '../backend-new/handlers/payments.handler';
+import { loginHandler, restoreSessionHandler } from '../backend-new/handlers/auth.handler';  // CHANGED (added restoreSessionHandler)
 
 let mainWindow: BrowserWindow | null = null;
 
@@ -132,6 +132,25 @@ function registerIpcHandlers() {
         role: res.data.role
       };
       console.log('[IPC MAIN]: Auth session created in main process for user:', currentSession);
+    }
+    return res;
+  });
+
+  // ADDED — called once by the renderer at startup if it has a cached user in localStorage
+  ipcMain.handle('auth:restoreSession', async (_, userId: number) => {
+    console.log('[IPC MAIN]: Received auth:restoreSession IPC request for userId:', userId);
+    const res = await restoreSessionHandler(userId);
+    if (res.success && res.data) {
+      currentSession = {
+        id: res.data.userId,
+        name: res.data.name,
+        email: res.data.email,
+        role: res.data.role
+      };
+      console.log('[IPC MAIN]: Session restored in main process for user:', currentSession);
+    } else {
+      currentSession = null;
+      console.log('[IPC MAIN]: Session restore failed:', res.message);
     }
     return res;
   });
