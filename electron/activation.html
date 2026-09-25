@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Aanzara Billing — Activation</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+    background: #1e1f26;
+    color: #eaeaf0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 100vh;
+    padding: 24px;
+  }
+  .card {
+    width: 100%;
+    max-width: 440px;
+  }
+  h1 {
+    font-size: 18px;
+    margin: 0 0 4px;
+  }
+  p.sub {
+    color: #9a9ab0;
+    font-size: 13px;
+    margin: 0 0 20px;
+  }
+  label {
+    display: block;
+    font-size: 12px;
+    color: #9a9ab0;
+    margin-bottom: 6px;
+  }
+  .machine-id-row {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 20px;
+  }
+  .machine-id-row input {
+    flex: 1;
+    background: #2a2b35;
+    border: 1px solid #3a3b48;
+    border-radius: 6px;
+    color: #eaeaf0;
+    padding: 8px 10px;
+    font-size: 12px;
+    font-family: Consolas, monospace;
+  }
+  .machine-id-row button {
+    background: #34364a;
+    border: 1px solid #3a3b48;
+    color: #eaeaf0;
+    border-radius: 6px;
+    padding: 0 12px;
+    cursor: pointer;
+    font-size: 12px;
+  }
+  .machine-id-row button:hover { background: #3d3f56; }
+
+  textarea {
+    width: 100%;
+    min-height: 90px;
+    background: #2a2b35;
+    border: 1px solid #3a3b48;
+    border-radius: 6px;
+    color: #eaeaf0;
+    padding: 10px;
+    font-size: 12px;
+    font-family: Consolas, monospace;
+    resize: vertical;
+    margin-bottom: 12px;
+  }
+  .activate-btn {
+    width: 100%;
+    background: #4c6ef5;
+    border: none;
+    color: white;
+    padding: 10px;
+    border-radius: 6px;
+    font-size: 14px;
+    cursor: pointer;
+  }
+  .activate-btn:disabled {
+    background: #3a3b48;
+    cursor: not-allowed;
+  }
+  .activate-btn:not(:disabled):hover { background: #3f5be0; }
+
+  .msg {
+    margin-top: 14px;
+    font-size: 13px;
+    padding: 10px 12px;
+    border-radius: 6px;
+    display: none;
+  }
+  .msg.error {
+    display: block;
+    background: rgba(220, 60, 60, 0.15);
+    border: 1px solid rgba(220, 60, 60, 0.4);
+    color: #ff8080;
+  }
+  .msg.success {
+    display: block;
+    background: rgba(60, 180, 100, 0.15);
+    border: 1px solid rgba(60, 180, 100, 0.4);
+    color: #7be0a0;
+  }
+  .copied {
+    color: #7be0a0 !important;
+  }
+</style>
+</head>
+<body>
+  <div class="card">
+    <h1>Activate Aanzara Billing</h1>
+    <p class="sub">This computer needs a license key before the app can start.</p>
+
+    <label>Your Machine ID — send this to your software provider</label>
+    <div class="machine-id-row">
+      <input id="machineId" type="text" readonly value="Loading..." />
+      <button id="copyBtn" type="button">Copy</button>
+    </div>
+
+    <label>License Key — paste the key your provider sent you</label>
+    <textarea id="licenseKey" placeholder="Paste your license key here"></textarea>
+
+    <button id="activateBtn" class="activate-btn">Activate</button>
+
+    <div id="msg" class="msg"></div>
+  </div>
+
+  <script>
+    const machineIdInput = document.getElementById('machineId');
+    const copyBtn = document.getElementById('copyBtn');
+    const licenseKeyInput = document.getElementById('licenseKey');
+    const activateBtn = document.getElementById('activateBtn');
+    const msg = document.getElementById('msg');
+
+    function showMessage(text, type) {
+      msg.textContent = text;
+      msg.className = 'msg ' + type;
+    }
+
+    async function init() {
+      try {
+        const id = await window.api.license.getMachineId();
+        machineIdInput.value = id;
+      } catch (err) {
+        machineIdInput.value = 'Error reading machine ID';
+        showMessage('Could not read this machine\'s ID: ' + (err && err.message ? err.message : err), 'error');
+      }
+    }
+
+    copyBtn.addEventListener('click', async () => {
+      try {
+        await navigator.clipboard.writeText(machineIdInput.value);
+        copyBtn.textContent = 'Copied!';
+        copyBtn.classList.add('copied');
+        setTimeout(() => {
+          copyBtn.textContent = 'Copy';
+          copyBtn.classList.remove('copied');
+        }, 1500);
+      } catch {
+        machineIdInput.select();
+      }
+    });
+
+    activateBtn.addEventListener('click', async () => {
+      const key = licenseKeyInput.value.trim();
+      if (!key) {
+        showMessage('Please paste a license key first.', 'error');
+        return;
+      }
+
+      activateBtn.disabled = true;
+      activateBtn.textContent = 'Activating...';
+      showMessage('', '');
+      msg.className = 'msg';
+
+      try {
+        const result = await window.api.license.activate(key);
+        if (result.valid) {
+          showMessage('License activated. Restarting the app...', 'success');
+          // Main process relaunches the whole app on success, so nothing
+          // further to do here.
+        } else {
+          showMessage(result.reason || 'This license key is not valid for this computer.', 'error');
+          activateBtn.disabled = false;
+          activateBtn.textContent = 'Activate';
+        }
+      } catch (err) {
+        showMessage('Activation failed: ' + (err && err.message ? err.message : err), 'error');
+        activateBtn.disabled = false;
+        activateBtn.textContent = 'Activate';
+      }
+    });
+
+    init();
+  </script>
+</body>
+</html>

@@ -4,7 +4,7 @@
   "description": "Aanzara Billing Offline Desktop Application",
   "main": "dist-backend/electron/main.js",
   "scripts": {
-    "build:backend": "tsc",
+    "build:backend": "tsc && node -e \"require('fs').copyFileSync('electron/activation.html', 'dist-backend/electron/activation.html')\"",
     "build:frontend": "cd frontend-new && npm run build",
     "build": "npm run build:backend && npm run build:frontend",
     "dev:frontend": "cd frontend-new && npm run dev",
@@ -20,6 +20,7 @@
     "@prisma/client": "^6.4.1",
     "bcryptjs": "^3.0.2",
     "exceljs": "^4.4.0",
+    "node-machine-id": "^1.1.12",
     "pdfkit": "^0.20.2",
     "recharts": "^3.10.1",
     "zod": "^3.24.2"
@@ -44,6 +45,7 @@
       "dist-backend/**/*",
       "frontend-new/dist/**/*",
       "node_modules/**/*",
+      "node_modules/.prisma/**/*",
       "!node_modules/@prisma/engines/**"
     ],
     "extraResources": [

@@ -2,8 +2,11 @@ import { app, BrowserWindow, ipcMain, dialog } from 'electron';
 import path from 'path';
 import fs from 'fs';
 
-import { getPrismaClient, ensureSchemaUpToDate  } from '../database/db';
+import { getPrismaClient, ensureSchemaUpToDate } from '../database/db';
 import { seedDatabase } from '../database/seed';
+
+import { getMachineId } from '../backend-new/utils/machineId';
+import { checkStoredLicense, activateLicense } from '../backend-new/utils/license';
 
 import { calculateBillingHandler, createBillHandler, scanBarcodeHandler } from '../backend-new/handlers/billing.handler';
 import {
@@ -72,9 +75,37 @@ import {
   verifyPaymentHandler,
   generateUpiUrlHandler
 } from '../backend-new/handlers/payments.handler';
-import { loginHandler, restoreSessionHandler } from '../backend-new/handlers/auth.handler';  // CHANGED (added restoreSessionHandler)
+import { loginHandler, restoreSessionHandler } from '../backend-new/handlers/auth.handler';
 
 let mainWindow: BrowserWindow | null = null;
+let activationWindow: BrowserWindow | null = null;
+
+/* ------------------------------------------------------------------ */
+/* Activation window - shown instead of the app when there is no      */
+/* valid license on this machine. Loads a small standalone HTML file  */
+/* (not the React app) so it works even before the main UI is built.  */
+/* ------------------------------------------------------------------ */
+function createActivationWindow() {
+  activationWindow = new BrowserWindow({
+    width: 520,
+    height: 480,
+    resizable: false,
+    title: 'Aanzara Billing — Activation Required',
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: false
+    }
+  });
+
+  activationWindow.setMenuBarVisibility(false);
+  activationWindow.loadFile(path.join(__dirname, 'activation.html'));
+
+  activationWindow.on('closed', () => {
+    activationWindow = null;
+  });
+}
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -119,6 +150,27 @@ function createWindow() {
 
 let currentSession: { id: number; name: string; email: string; role: string } | null = null;
 
+/* ------------------------------------------------------------------ */
+/* License IPC handlers - registered ALWAYS, even before activation,  */
+/* so the activation window can call them.                            */
+/* ------------------------------------------------------------------ */
+function registerLicenseIpcHandlers() {
+  ipcMain.handle('license:getMachineId', () => getMachineId());
+
+  ipcMain.handle('license:status', () => checkStoredLicense());
+
+  ipcMain.handle('license:activate', async (_, key: string) => {
+    const result = activateLicense(key);
+    if (result.valid) {
+      // Relaunch so the app boots normally through the licensed path below.
+      activationWindow?.close();
+      app.relaunch();
+      app.exit(0);
+    }
+    return result;
+  });
+}
+
 function registerIpcHandlers() {
   // Auth
   ipcMain.handle('auth:login', async (_, request) => {
@@ -136,7 +188,6 @@ function registerIpcHandlers() {
     return res;
   });
 
-  // ADDED — called once by the renderer at startup if it has a cached user in localStorage
   ipcMain.handle('auth:restoreSession', async (_, userId: number) => {
     console.log('[IPC MAIN]: Received auth:restoreSession IPC request for userId:', userId);
     const res = await restoreSessionHandler(userId);
@@ -210,7 +261,8 @@ function registerIpcHandlers() {
   ipcMain.handle('sales:getById', async (_, id) => getSaleByIdHandler(id));
   ipcMain.handle('sales:getByInvoice', async (_, invNum) => getSaleByInvoiceHandler(invNum));
   ipcMain.handle('sales:update', async (_, id, dto) => updateSaleHandler(id, dto, currentSession));
-    ipcMain.handle('sales:delete', async (_, id) => cancelSaleHandler(id, currentSession));
+  ipcMain.handle('sales:delete', async (_, id) => cancelSaleHandler(id, currentSession));
+
   // Reports
   ipcMain.handle('reports:monthlySales', async (_, year) => getMonthlySalesHandler(year));
   ipcMain.handle('reports:dailySales', async (_, from, to) => getDailySalesHandler(from, to));
@@ -283,6 +335,19 @@ function registerIpcHandlers() {
 }
 
 app.whenReady().then(async () => {
+  // License IPC handlers are registered up front so the activation window
+  // (if shown) can call license:getMachineId / license:activate.
+  registerLicenseIpcHandlers();
+
+  const license = checkStoredLicense();
+  if (!license.valid) {
+    console.log('[LICENSE]: No valid license on this machine —', license.reason);
+    createActivationWindow();
+    return; // Stop here: don't touch the DB, don't register app IPC, don't open the main window.
+  }
+
+  console.log('[LICENSE]: Valid license for', license.payload.customer);
+
   try {
     getPrismaClient();
     await ensureSchemaUpToDate();

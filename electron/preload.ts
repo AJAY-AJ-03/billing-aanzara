@@ -85,5 +85,10 @@ contextBridge.exposeInMainWorld('api', {
   app: {
     print: () => ipcRenderer.invoke('app:print'),
     savePdfDialog: (base64Data: string, filename?: string) => ipcRenderer.invoke('app:savePdfDialog', base64Data, filename)
-  }
+  },
+  license: {
+  getMachineId: () => ipcRenderer.invoke('license:getMachineId'),
+  status: () => ipcRenderer.invoke('license:status'),
+  activate: (key: string) => ipcRenderer.invoke('license:activate', key)
+}
 });
