@@ -38,6 +38,7 @@
   "build": {
     "appId": "com.aanzara.billing",
     "productName": "Aanzara Billing",
+    "asar": false,
     "directories": {
       "output": "dist-electron"
     },
@@ -59,6 +60,13 @@
       {
         "from": "assets",
         "to": "assets",
+        "filter": [
+          "**/*"
+        ]
+      },
+      {
+        "from": "node_modules/.prisma",
+        "to": "app/node_modules/.prisma",
         "filter": [
           "**/*"
         ]
